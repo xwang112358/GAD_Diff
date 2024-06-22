@@ -9,27 +9,16 @@ from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import from_dgl, to_networkx, k_hop_subgraph
 import networkx as nx
 from tqdm import tqdm
+from utils import GADDataset
 import os
 from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
 # from dgl.data.utils import load_graphs
 
 # to do
-# 1. check connected components
-# 2. create subgraphs of different hops
-
-# class GADDataset:
-#     def __init__(self, name='tfinance', prefix='datasets/'):
-#         graph = load_graphs(prefix + name)[0][0]
-#         self.name = name
-#         self.graph = graph
-
-#     def split(self, semi_supervised=True, trial_id=0):
-#         if semi_supervised:
-#             trial_id += 10
-#         self.graph.ndata['train_mask'] = self.graph.ndata['train_masks'][:,trial_id]
-#         self.graph.ndata['val_mask'] = self.graph.ndata['val_masks'][:,trial_id]
-#         self.graph.ndata['test_mask'] = self.graph.ndata['test_masks'][:,trial_id]
-#         print(self.graph.ndata['train_mask'].sum(), self.graph.ndata['val_mask'].sum(), self.graph.ndata['test_mask'].sum())
+# 1. get subgraph dataset for questions, tolokers, reddit 
+# questions: 48921 nodes, 153540 edges, 301 feats 4.6% --> 2250 anomaly
+# tolokers: 11758 nodes, 519000 edges, 10 feats, 21.8% --> 2563 anomaly
+# reddit: 10984 nodes, 168016 edges, 64 feats, 3.3% --> 362.472 anomaly 
 
 
 
