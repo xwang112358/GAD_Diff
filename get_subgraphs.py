@@ -20,9 +20,11 @@ from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
 # tolokers: 11758 nodes, 519000 edges, 10 feats, 21.8% --> 2563 anomaly
 # reddit: 10984 nodes, 168016 edges, 64 feats, 3.3% --> 362.472 anomaly 
 
+# 2. count number of nodes for 2-hop subgraphs 
 
 
 class SubgraphDataset(InMemoryDataset):
+    # to do: make it load the dataset by dataset = SubgraphDataset instead of torch.load() 
     def __init__(self, root, dataset_name, subgraph_data_list: List[Data], transform=None, pre_transform=None):
         self.subgraph_data_list = subgraph_data_list
         self.dataset_name = dataset_name
