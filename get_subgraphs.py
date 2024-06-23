@@ -55,8 +55,7 @@ class SubgraphDataset(InMemoryDataset):
 # 3. can we use random walk to sample the nodes?  have more 1-hop random walk samples than 2-hop random walk samples
 
 
-
-def get_khop_subgraph(pyg_data, node_idx, k, maxN):
+def get_diff_subgraph(pyg_data, node_idx, k, maxN):
     subset, edge_index, mapping, edge_mask = k_hop_subgraph(node_idx, k, pyg_data.edge_index, relabel_nodes=True)
     hop_dists = torch.full((pyg_data.num_nodes,), -1, dtype=torch.long)
     hop_dists[subset] = mapping
@@ -77,8 +76,11 @@ def get_khop_subgraph(pyg_data, node_idx, k, maxN):
 
 
 def create_subgraph(args):
+    # record the size of the original k-hop subgraph
+    # if the size is larger than maxN, then sample multiple subgraphs with random walk
+
     pyg_data, node_idx, k, split, maxN = args
-    subgraph_data = get_khop_subgraph(pyg_data, node_idx, k, maxN)
+    subgraph_data = get_diff_subgraph(pyg_data, node_idx, k, maxN)
     subgraph_data.split = split
     return subgraph_data
 

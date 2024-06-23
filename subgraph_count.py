@@ -24,8 +24,7 @@ def main(config):
 
     pyg_data = from_dgl(data.graph)
     
-    # to undirected
-    # pyg_data.edge_index = to_undirected(pyg_data.edge_index)
+    pyg_data.edge_index = pyg_data.edge_index.long()
 
     print(pyg_data.edge_index.size(1))
 
@@ -72,6 +71,17 @@ def main(config):
         train_anomaly_subgraph_sizes.append(num_nodes)
     train_anomaly_mean = torch.tensor(train_anomaly_subgraph_sizes).float().mean()
     train_anomaly_std = torch.tensor(train_anomaly_subgraph_sizes).float().std()
+
+    # draw histogram of subgraph sizes for anomalies in train set
+    import matplotlib.pyplot as plt
+
+    plt.hist(train_anomaly_subgraph_sizes, bins=20)
+    plt.xlabel('Subgraph Size')
+    plt.ylabel('Frequency')
+    plt.title(f'{config.name} Subgraph Sizes for Anomalies in Train Set')
+
+    plt.savefig(f'./figures/{config.name}.png')
+    plt.close()
 
     print(f"Dataset {config.name}: for all {config.khops}-hop subgraph mean # nodes for anomalies in train set: {train_anomaly_mean}, std: {train_anomaly_std}")
         

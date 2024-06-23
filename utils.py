@@ -4,6 +4,10 @@ import os
 import json
 import torch
 from torch_geometric.data import Data
+from typing import Optional, Tuple, Union
+from torch import Tensor
+
+
 
 class GADDataset:
     def __init__(self, name='tfinance', prefix='datasets/'):
@@ -19,6 +23,97 @@ class GADDataset:
         self.graph.ndata['test_mask'] = self.graph.ndata['test_masks'][:,trial_id]
         print(self.graph.ndata['train_mask'].sum(), self.graph.ndata['val_mask'].sum(), self.graph.ndata['test_mask'].sum())
 
+
+
+
+
+def random_walk_until_maxN(
+    row: Tensor,
+    col: Tensor,
+    start: Tensor,
+    maxN: int,
+    walk_length: int,
+    p: float = 1,
+    q: float = 1,
+    coalesced: bool = True,
+    num_nodes: Optional[int] = None,
+    return_edge_indices: bool = False,
+) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+    """Samples random walks until the number of unique nodes reaches `maxN`.
+    Args:
+        row (LongTensor): Source nodes.
+        col (LongTensor): Target nodes.
+        start (LongTensor): Nodes from where random walks start.
+        maxN (int): The number of unique nodes to reach.
+        walk_length (int): The walk length.
+        p (float, optional): Likelihood of immediately revisiting a node in the
+            walk. (default: :obj:`1`)
+        q (float, optional): Control parameter to interpolate between
+            breadth-first strategy and depth-first strategy (default: :obj:`1`)
+        coalesced (bool, optional): If set to :obj:`True`, will coalesce/sort
+            the graph given by :obj:`(row, col)` according to :obj:`row`.
+            (default: :obj:`True`)
+        num_nodes (int, optional): The number of nodes. (default: :obj:`None`)
+        return_edge_indices (bool, optional): Whether to additionally return
+            the indices of edges traversed during the random walk.
+            (default: :obj:`False`)
+
+    :rtype: :class:`LongTensor`
+    """
+    if num_nodes is None:
+        num_nodes = max(int(row.max()), int(col.max()), int(start.max())) + 1
+
+    if coalesced:
+        perm = torch.argsort(row * num_nodes + col)
+        row, col = row[perm], col[perm]
+
+    deg = row.new_zeros(num_nodes)
+    deg.scatter_add_(0, row, torch.ones_like(row))
+    rowptr = row.new_zeros(num_nodes + 1)
+    torch.cumsum(deg, 0, out=rowptr[1:])
+
+    all_nodes = []
+    all_edges = []
+    unique_nodes = set()
+
+    while len(unique_nodes) < maxN:
+        node_seq, edge_seq = torch.ops.torch_cluster.random_walk(
+            rowptr, col, start, walk_length, p, q)
+        
+        all_nodes.append(node_seq)
+        all_edges.append(edge_seq)
+        
+        unique_nodes.update(node_seq.view(-1).tolist())
+        
+        if len(unique_nodes) >= maxN:
+            break
+
+    all_nodes = torch.cat(all_nodes, dim=1)
+    if return_edge_indices:
+        all_edges = torch.cat(all_edges, dim=1)
+        return all_nodes, all_edges
+
+    return all_nodes
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# archived code
 
 def get_khop_subgraph_with_random_walk(pyg_data, node_idx, maxN, p_1hop=0.7):
     # Initialize the sampled node set with the central node
