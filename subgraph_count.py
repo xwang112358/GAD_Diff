@@ -7,11 +7,11 @@ from torch_geometric.data import Data
 from tqdm import tqdm
 
 # subgraph statistics for the dataset
-# tolokers 2hop --> mean: 1095, std: 1343; 1hop --> mean: 45, std: 99
-# reddit 2hop --> mean: 1936, std: 1569; 1hop --> mean: 15, std: 54
+# tolokers all 2hop --> mean: 1095, std: 1343; 1hop --> mean: 45, std: 99; # train anomaly 1-hop (72, 163) 2-hop (1347, 1647)
+# reddit(undirected) 2hop --> mean: 1936, std: 1569; 1hop --> mean: 15, std: 54; # train anomaly 1-hop (12, 12) 2-hop (1347, 1647)
 # questions 2hop --> mean: 110, std: 353; 1hop --> mean: 4, std: 15
 
-
+# use source to target get the computation graph
 
 def get_khop_subgraph_and_count_nodes(pyg_data, node_idx, k):
     subset, edge_index, _, _ = k_hop_subgraph(node_idx, k, pyg_data.edge_index, relabel_nodes=False, directed=False)
@@ -20,11 +20,15 @@ def get_khop_subgraph_and_count_nodes(pyg_data, node_idx, k):
 def main(config):
     data = GADDataset(config.name)
     print(data.graph.number_of_nodes())
-    train_mask = data.graph.ndata['train_masks'][:,0]
+    print(data.graph.number_of_edges())
 
     pyg_data = from_dgl(data.graph)
-    pyg_data.edge_index = pyg_data.edge_index.long()
     
+    # to undirected
+    # pyg_data.edge_index = to_undirected(pyg_data.edge_index)
+
+    print(pyg_data.edge_index.size(1))
+
     if hasattr(pyg_data, 'train_masks'):
         pyg_data.train_masks = data.graph.ndata['train_masks'][:,0]
     if hasattr(pyg_data, 'val_masks'):
@@ -44,6 +48,8 @@ def main(config):
     # print all the attributes of pyg_data
 
     print(pyg_data)
+    torch.save(pyg_data, f'./pyg_dataset/{config.name}.pt')
+    # pyg_data.edge_index = to_undirected(pyg_data.edge_index)
     subgraph_sizes = []
     for idx in tqdm(range(pyg_data.num_nodes)):
         num_nodes, edge_index = get_khop_subgraph_and_count_nodes(pyg_data, idx, config.khops)
@@ -52,7 +58,25 @@ def main(config):
     # get mean and std of subgraph sizes
     mean = torch.tensor(subgraph_sizes).float().mean()
     std = torch.tensor(subgraph_sizes).float().std()
-    print(f"Dataset: {config.name} mean: {mean}, Std: {std}")
+    print(f"Dataset {config.name}: for all {config.khops} subgraph mean # nodes: {mean}, std: {std}")
+
+    # get idx where pyg.y == 1
+    anomaly_idx = (pyg_data.y == 1).nonzero().squeeze()
+    train_indices = torch.nonzero(pyg_data.train_masks, as_tuple=False).squeeze().tolist()
+    train_anomaly_idx = list(set(anomaly_idx.tolist()).intersection(set(train_indices)))
+
+    print(f"Dataset {config.name}: # anomalies in train set: {len(train_anomaly_idx)}")
+    train_anomaly_subgraph_sizes = []
+    for idx in train_anomaly_idx:
+        num_nodes, edge_index = get_khop_subgraph_and_count_nodes(pyg_data, idx, config.khops)
+        train_anomaly_subgraph_sizes.append(num_nodes)
+    train_anomaly_mean = torch.tensor(train_anomaly_subgraph_sizes).float().mean()
+    train_anomaly_std = torch.tensor(train_anomaly_subgraph_sizes).float().std()
+
+    print(f"Dataset {config.name}: for all {config.khops}-hop subgraph mean # nodes for anomalies in train set: {train_anomaly_mean}, std: {train_anomaly_std}")
+        
+
+
 
 
 if __name__ == '__main__':

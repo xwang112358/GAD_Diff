@@ -21,7 +21,10 @@ from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
 # tolokers: 11758 nodes, 519000 edges, 10 feats, 21.8% --> 2563 anomaly
 # reddit: 10984 nodes, 168016 edges, 64 feats, 3.3% --> 362.472 anomaly 
 
-# 2. count number of nodes for 2-hop subgraphs 
+# The GAD graph is not undirected, but the graph diffusion model requires an undirected graph.
+# to do: 1. test the performance of undirected graph on GAD dataset
+# 2.
+
 
 
 class SubgraphDataset(InMemoryDataset):
@@ -51,61 +54,7 @@ class SubgraphDataset(InMemoryDataset):
 # 2. how to randomly subsample the nodes to maxN while weighting the nodes by their hop distance?
 # 3. can we use random walk to sample the nodes?  have more 1-hop random walk samples than 2-hop random walk samples
 
-def get_khop_subgraph_with_random_walk(pyg_data, node_idx, maxN, p_1hop=0.7):
-    # Initialize the sampled node set with the central node
-    sampled_nodes = set([node_idx])
-    current_node = node_idx
-    
-    while len(sampled_nodes) < maxN:
-        if random.random() < p_1hop:
-            # Perform a 1-hop random walk
-            neighbors = pyg_data.edge_index[1][pyg_data.edge_index[0] == current_node].tolist()
-            if neighbors:
-                next_node = random.choice(neighbors)
-                sampled_nodes.add(next_node)
-                current_node = next_node
-        else:
-            # Perform a 2-hop random walk
-            neighbors = pyg_data.edge_index[1][pyg_data.edge_index[0] == current_node].tolist()
-            if neighbors:
-                intermediate_node = random.choice(neighbors)
-                second_neighbors = pyg_data.edge_index[1][pyg_data.edge_index[0] == intermediate_node].tolist()
-                if second_neighbors:
-                    next_node = random.choice(second_neighbors)
-                    sampled_nodes.add(intermediate_node)
-                    sampled_nodes.add(next_node)
-                    current_node = next_node
-        
-        # Stop if we have reached maxN nodes
-        if len(sampled_nodes) >= maxN:
-            sampled_nodes = set(list(sampled_nodes)[:maxN])
-            break
-    
-    # Convert sampled nodes to a list
-    sampled_nodes = list(sampled_nodes)
-    
-    # Create a mask for the sampled nodes
-    node_mask = torch.zeros(pyg_data.num_nodes, dtype=torch.bool)
-    node_mask[sampled_nodes] = True
-    
-    # Filter edges to keep only those that connect sampled nodes
-    edge_index = pyg_data.edge_index[:, node_mask[pyg_data.edge_index[0]] & node_mask[pyg_data.edge_index[1]]]
-    
-    # Remap the node indices in edge_index
-    node_idx_map = {old_idx: new_idx for new_idx, old_idx in enumerate(sampled_nodes)}
-    edge_index = torch.tensor(
-        [[node_idx_map[idx] for idx in edge] for edge in edge_index.t().tolist()],
-        dtype=torch.long).t()
-    
-    # Create a new Data object for the subsampled subgraph
-    subgraph_data = Data(
-        x=pyg_data.x[sampled_nodes],
-        edge_index=edge_index,
-        y=pyg_data.y[sampled_nodes] if pyg_data.y is not None else None,
-        edge_attr=pyg_data.edge_attr[node_mask[pyg_data.edge_index[0]] & node_mask[pyg_data.edge_index[1]]] if pyg_data.edge_attr is not None else None
-    )
-    
-    return subgraph_data
+
 
 def get_khop_subgraph(pyg_data, node_idx, k, maxN):
     subset, edge_index, mapping, edge_mask = k_hop_subgraph(node_idx, k, pyg_data.edge_index, relabel_nodes=True)
