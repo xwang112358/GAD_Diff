@@ -8,8 +8,8 @@ from tqdm import tqdm
 
 # subgraph statistics for the dataset
 # tolokers all 2hop --> mean: 1095, std: 1343; 1hop --> mean: 45, std: 99; # train anomaly 1-hop (72, 163) 2-hop (1347, 1647)
-# reddit(undirected) 2hop --> mean: 1936, std: 1569; 1hop --> mean: 15, std: 54; # train anomaly 1-hop (12, 12) 2-hop (1347, 1647)
-# questions 2hop --> mean: 110, std: 353; 1hop --> mean: 4, std: 15
+# reddit(undirected) 2hop --> mean: 1936, std: 1569; 1hop --> mean: 15, std: 54; # train anomaly 1-hop (12, 12) 2-hop (2459, 1670)
+# questions 2hop --> mean: 110, std: 353; 1hop --> mean: 4, std: 15    # train anomaly 1-hop (72, 163) 2-hop (240, 611)
 
 # use source to target get the computation graph
 
@@ -78,14 +78,13 @@ def main(config):
     plt.hist(train_anomaly_subgraph_sizes, bins=20)
     plt.xlabel('Subgraph Size')
     plt.ylabel('Frequency')
-    plt.title(f'{config.name} Subgraph Sizes for Anomalies in Train Set')
+    plt.title(f'{config.name} {config.khops}-hop Subgraph Sizes for Anomalies in Train Set')
 
     plt.savefig(f'./figures/{config.name}.png')
     plt.close()
 
     print(f"Dataset {config.name}: for all {config.khops}-hop subgraph mean # nodes for anomalies in train set: {train_anomaly_mean}, std: {train_anomaly_std}")
         
-
 
 
 

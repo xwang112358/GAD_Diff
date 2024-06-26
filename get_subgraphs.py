@@ -6,13 +6,14 @@ from torch_geometric.utils import subgraph, to_undirected
 from torch_geometric.data import Data
 from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
 from torch_geometric.data import Data, InMemoryDataset
-from torch_geometric.utils import from_dgl, to_networkx, k_hop_subgraph
+from torch_geometric.utils import from_dgl, to_networkx, k_hop_subgraph, to_dense_adj
 import networkx as nx
 from tqdm import tqdm
-from utils import GADDataset
+from utils import GADDataset, random_walk_until_maxN
 import os
 import random
 from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
+
 # from dgl.data.utils import load_graphs
 
 # to do
@@ -24,7 +25,6 @@ from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
 # The GAD graph is not undirected, but the graph diffusion model requires an undirected graph.
 # to do: 1. test the performance of undirected graph on GAD dataset
 # 2.
-
 
 
 class SubgraphDataset(InMemoryDataset):
@@ -54,33 +54,50 @@ class SubgraphDataset(InMemoryDataset):
 # 2. how to randomly subsample the nodes to maxN while weighting the nodes by their hop distance?
 # 3. can we use random walk to sample the nodes?  have more 1-hop random walk samples than 2-hop random walk samples
 
+def get_khop_subgraph(pyg_data, node_idx, maxN):
+    # Extract 2-hop subgraph
+    hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
+        node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
 
-def get_diff_subgraph(pyg_data, node_idx, k, maxN):
-    subset, edge_index, mapping, edge_mask = k_hop_subgraph(node_idx, k, pyg_data.edge_index, relabel_nodes=True)
-    hop_dists = torch.full((pyg_data.num_nodes,), -1, dtype=torch.long)
-    hop_dists[subset] = mapping
+    # Convert the 2-hop subgraph to undirected
+    hop2_edge_index = to_undirected(hop2_edge_index)
 
-    if len(subset) > maxN:
-        # Sort nodes by hop distance in descending order
-        sorted_nodes = sorted(subset.tolist(), key=lambda n: -hop_dists[n])
-        subset = torch.tensor(sorted_nodes[:maxN])
-        edge_index, edge_mask = subgraph(subset, pyg_data.edge_index, relabel_nodes=True, num_nodes=pyg_data.num_nodes)
+    # Perform random walk to sample nodes until maxN unique nodes are reached
+    if len(hop2_subset) > maxN:
+        walk_start = hop2_mapping[0].item() # center node
+        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=2)
+        subsample_subset = torch.unique(walks.flatten())
+        
+        while len(subsample_subset) < maxN:
+            # keep random walking until we have maxN unique nodes
+            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=2)
+            # concatenate the new walks with the previous walks
+            subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
 
-    # Apply NormalizeFeatures and SVDFeatureReduction
-    subgraph_data = Data(x=pyg_data.x[subset], edge_index=edge_index, num_nodes=len(subset))
+        if len(subsample_subset) > maxN:
+            subsample_subset = subsample_subset[:maxN]
 
+        subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
+    else:
+        subsample_subset = hop2_subset
+        subsample_edge_index = hop2_edge_index
+
+    # Create subgraph data object
+    subgraph_data = Data(x=pyg_data.x[subsample_subset], edge_index=subsample_edge_index, num_nodes=len(subsample_subset))
+
+    # Set the label for the subgraph based on the original node's label
     label = pyg_data.y[node_idx].item()
     subgraph_data.y = torch.tensor([label], dtype=torch.long)
-    subgraph_data.center_node_idx = mapping[0].item()
+    subgraph_data.center_node_idx = node_idx
+
     return subgraph_data
 
 
 def create_subgraph(args):
     # record the size of the original k-hop subgraph
     # if the size is larger than maxN, then sample multiple subgraphs with random walk
-
-    pyg_data, node_idx, k, split, maxN = args
-    subgraph_data = get_diff_subgraph(pyg_data, node_idx, k, maxN)
+    pyg_data, node_idx, split, maxN = args
+    subgraph_data = get_khop_subgraph(pyg_data, node_idx, maxN)
     subgraph_data.split = split
     return subgraph_data
 
@@ -88,30 +105,30 @@ def create_subgraph(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Create k-hop subgraphs from a PyG dataset.')
     parser.add_argument('--name', type=str, default='questions  ', help='Name of the dataset')
-    parser.add_argument('--khops', type=int, default=2, help='Number of hops for subgraphs')
-    parser.add_argument('--maxN', type=int, default=50, help='Largest number of nodes allowed in the subgraph')
-    parser.add_argument('--svd_out_channels', type=int, default=64, help='Number of output channels of SVD')
-    parser.add_argument('--use_svd', action='store_true', help='whether to use svd to conduct dimension reduction')
-    parser.add_argument('--use_norm', action='store_true', help='whether to use normalize the node features')
+    # parser.add_argument('--khops', type=int, default=2, help='Number of hops for subgraphs')
+    parser.add_argument('--maxN', type=int, default=150, help='Largest number of nodes allowed in the subgraph')
+    # parser.add_argument('--svd_out_channels', type=int, default=64, help='Number of output channels of SVD')
+    # parser.add_argument('--use_svd', action='store_true', help='whether to use svd to conduct dimension reduction')
+    # parser.add_argument('--use_norm', action='store_true', help='whether to use normalize the node features')
     
     args = parser.parse_args()
 
     name = args.name
-    k = args.khops
+    # k = args.khops
     maxN = args.maxN
-    use_svd = args.use_svd
-    svd_out_channels = args.svd_out_channels
-    use_norm = args.use_norm
+    # use_svd = args.use_svd
+    # svd_out_channels = args.svd_out_channels
+    # use_norm = args.use_norm
     
     try:
         pyg_data = torch.load(f'./pyg_dataset/raw/{name}.pt')
         
-        if use_norm:
-            normalize = NormalizeFeatures()
-            pyg_data = normalize(pyg_data)
-        if use_svd:
-            svd = SVDFeatureReduction(svd_out_channels)
-            pyg_data = svd(pyg_data)
+        # if use_norm:
+        #     normalize = NormalizeFeatures()
+        #     pyg_data = normalize(pyg_data)
+        # if use_svd:
+        #     svd = SVDFeatureReduction(svd_out_channels)
+        #     pyg_data = svd(pyg_data)
             
         print(f"Loaded {name} PyG data")
         print(pyg_data.num_nodes)
@@ -143,41 +160,60 @@ if __name__ == '__main__':
         print(pyg_data)
 
     # Ensure edges are undirected
-    pyg_data.edge_index = to_undirected(pyg_data.edge_index)
-
+    # pyg_data.edge_index = to_undirected(pyg_data.edge_index)
     nx_graph = to_networkx(pyg_data, to_undirected=True)
     components = list(nx.connected_components(nx_graph))
     if len(components) > 1:
         print(f"Graph contains {len(components)} connected components.")
     else:
         print("Graph is connected.")
-        
+    
+    anomaly_indices = torch.nonzero(pyg_data.y, as_tuple=False).squeeze().tolist()
+
     train_indices = torch.nonzero(pyg_data.train_masks, as_tuple=False).squeeze().tolist()
-    vali_indices = torch.nonzero(pyg_data.val_masks, as_tuple=False).squeeze().tolist()
+    valid_indices = torch.nonzero(pyg_data.val_masks, as_tuple=False).squeeze().tolist()
     test_indices = torch.nonzero(pyg_data.test_masks, as_tuple=False).squeeze().tolist()
 
+    train_anomaly_indices = list(set(anomaly_indices).intersection(set(train_indices)))
+    valid_anomaly_indices = list(set(anomaly_indices).intersection(set(valid_indices)))
+    test_anomaly_indices = list(set(anomaly_indices).intersection(set(test_indices)))
+    
+
+
     # Create subgraphs with progress bar
-    train_subgraphs = [create_subgraph((pyg_data, idx, k, 0, maxN)) for idx in tqdm(train_indices, desc='Processing train subgraphs')]
-    valid_subgraphs = [create_subgraph((pyg_data, idx, k, 1, maxN)) for idx in tqdm(vali_indices, desc='Processing validation subgraphs')]
-    test_subgraphs = [create_subgraph((pyg_data, idx, k, 2, maxN)) for idx in tqdm(test_indices, desc='Processing test subgraphs')]
+    train_subgraphs = [create_subgraph((pyg_data, idx, 0, maxN)) for idx in tqdm(train_anomaly_indices, desc='Processing train subgraphs')]
+    # valid_subgraphs = [create_subgraph((pyg_data, idx, k, 1, maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing validation subgraphs')]
+    # test_subgraphs = [create_subgraph((pyg_data, idx, k, 2, maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
 
 
     print(f"Created {len(train_subgraphs)} training subgraphs.")
-    print(f"Created {len(valid_subgraphs)} validation subgraphs.")
-    print(f"Created {len(test_subgraphs)} test subgraphs.")
+    # print(f"Created {len(valid_subgraphs)} validation subgraphs.")
+    # print(f"Created {len(test_subgraphs)} test subgraphs.")
 
-    subgraph_dataset = train_subgraphs + valid_subgraphs + test_subgraphs
+    # subgraph_dataset = train_subgraphs + valid_subgraphs + test_subgraphs
+    # get a list of dense adjacency matrices
+    train_adj = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in train_subgraphs]
+
+    # print the size of each train_adj
+    for adj in train_adj:
+        print(adj.size())
+        print(adj)
+        break
+
+    if not os.path.exists(f'./pyg_dataset/{name}'):
+        os.makedirs(f'./pyg_dataset/{name}')
+    torch.save(train_adj, f'./pyg_dataset/{name}/{name}.pt')
         
     # Create the InMemoryDataset
-    dataset = SubgraphDataset(root='./pyg_dataset', dataset_name=name, subgraph_data_list=subgraph_dataset)
+    # dataset = SubgraphDataset(root=f'./pyg_dataset/{name}', dataset_name=name, subgraph_data_list=subgraph_dataset)
     
-    if use_norm and use_svd:
-        torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_norm_svd{svd_out_channels}.pt')
-    elif use_norm:
-        torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_norm.pt')
-    elif use_svd:
-        torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_svd{svd_out_channels}.pt')
-    else:
-        torch.save(dataset, f'./pyg_dataset/{name}_{k}hop.pt')
+    # if use_norm and use_svd:
+    #     torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_norm_svd{svd_out_channels}.pt')
+    # elif use_norm:
+    #     torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_norm.pt')
+    # elif use_svd:
+    #     torch.save(dataset, f'./pyg_dataset/{name}_{k}hop_svd{svd_out_channels}.pt')
+    # else:
+    #     torch.save(dataset, f'./pyg_dataset/{name}_{k}hop.pt')
 
     
