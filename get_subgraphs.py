@@ -65,12 +65,12 @@ def get_khop_subgraph(pyg_data, node_idx, maxN):
     # Perform random walk to sample nodes until maxN unique nodes are reached
     if len(hop2_subset) > maxN:
         walk_start = hop2_mapping[0].item() # center node
-        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=2)
+        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=6)
         subsample_subset = torch.unique(walks.flatten())
         
         while len(subsample_subset) < maxN:
             # keep random walking until we have maxN unique nodes
-            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=2)
+            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=6)
             # concatenate the new walks with the previous walks
             subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
 
@@ -121,7 +121,7 @@ if __name__ == '__main__':
     # use_norm = args.use_norm
     
     try:
-        pyg_data = torch.load(f'./pyg_dataset/raw/{name}.pt')
+        pyg_data = torch.load(f'./pyg_dataset/{name}.pt')
         
         # if use_norm:
         #     normalize = NormalizeFeatures()
@@ -185,6 +185,12 @@ if __name__ == '__main__':
     # valid_subgraphs = [create_subgraph((pyg_data, idx, k, 1, maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing validation subgraphs')]
     # test_subgraphs = [create_subgraph((pyg_data, idx, k, 2, maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
 
+    # calculate the average clustering coefficient of the subgraphs
+    train_clustering = [nx.average_clustering(to_networkx(subgraph)) for subgraph in train_subgraphs]
+    print(f"Average clustering coefficient of train subgraphs: {np.mean(train_clustering)}")
+    
+    
+
 
     print(f"Created {len(train_subgraphs)} training subgraphs.")
     # print(f"Created {len(valid_subgraphs)} validation subgraphs.")
@@ -192,17 +198,18 @@ if __name__ == '__main__':
 
     # subgraph_dataset = train_subgraphs + valid_subgraphs + test_subgraphs
     # get a list of dense adjacency matrices
-    train_adj = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in train_subgraphs]
+
+    train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), subgraph.x) for subgraph in train_subgraphs]
 
     # print the size of each train_adj
-    for adj in train_adj:
-        print(adj.size())
-        print(adj)
+    for adj, x in train_data:
+        print(adj.shape, x.shape)
+        print(x)
         break
 
     if not os.path.exists(f'./pyg_dataset/{name}'):
         os.makedirs(f'./pyg_dataset/{name}')
-    torch.save(train_adj, f'./pyg_dataset/{name}/{name}.pt')
+    torch.save(train_data, f'./pyg_dataset/{name}/{name}_v2.pt')
         
     # Create the InMemoryDataset
     # dataset = SubgraphDataset(root=f'./pyg_dataset/{name}', dataset_name=name, subgraph_data_list=subgraph_dataset)

@@ -9,7 +9,7 @@ from tqdm import tqdm
 # subgraph statistics for the dataset
 # tolokers all 2hop --> mean: 1095, std: 1343; 1hop --> mean: 45, std: 99; # train anomaly 1-hop (72, 163) 2-hop (1347, 1647)
 # reddit(undirected) 2hop --> mean: 1936, std: 1569; 1hop --> mean: 15, std: 54; # train anomaly 1-hop (12, 12) 2-hop (2459, 1670)
-# questions 2hop --> mean: 110, std: 353; 1hop --> mean: 4, std: 15    # train anomaly 1-hop (72, 163) 2-hop (240, 611)
+# questions 2hop --> mean: 110, std: 353; 1hop --> mean: 4, std: 15    # train anomaly 1-hop (8, 23) 2-hop (240, 611)
 
 # use source to target get the computation graph
 

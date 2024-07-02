@@ -7,6 +7,146 @@ from torch_geometric.data import Data
 from typing import Optional, Tuple, Union
 from torch import Tensor
 
+import copy
+from abc import ABC, abstractmethod
+from typing import Any, List, Tuple
+
+import torch
+from torch import Tensor
+
+from torch_geometric.data import Data
+from torch_geometric.transforms import BaseTransform
+from torch_geometric.utils import to_torch_csc_tensor
+
+
+class RootedSubgraphData(Data):
+    def __inc__(self, key: str, value: Any, *args: Any, **kwargs: Any) -> Any:
+        if key == 'sub_edge_index':
+            return self.n_id.size(0)
+        if key in ['n_sub_batch', 'e_sub_batch']:
+            return 1 + int(self.n_sub_batch[-1])
+        elif key == 'n_id':
+            return self.num_nodes
+        elif key == 'e_id':
+            assert self.edge_index is not None
+            return self.edge_index.size(1)
+        return super().__inc__(key, value, *args, **kwargs)
+
+    def map_data(self) -> Data:
+        data = copy.copy(self)
+
+        for key, value in self.items():
+            if key in ['sub_edge_index', 'n_id', 'e_id', 'e_sub_batch']:
+                del data[key]
+            elif key == 'n_sub_batch':
+                continue
+            elif key == 'num_nodes':
+                data.num_nodes = self.n_id.size(0)
+            elif key == 'edge_index':
+                data.edge_index = self.sub_edge_index
+            elif self.is_node_attr(key):
+                dim = self.__cat_dim__(key, value)
+                data[key] = value.index_select(dim, self.n_id)
+            elif self.is_edge_attr(key):
+                dim = self.__cat_dim__(key, value)
+                data[key] = value.index_select(dim, self.e_id)
+
+        return data
+
+
+class RootedSubgraph(BaseTransform, ABC):
+    @abstractmethod
+    def extract(
+        self,
+        data: Data,
+        node_id: int,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        pass
+
+    def map(
+        self,
+        data: Data,
+        n_mask: Tensor,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+
+        assert data.edge_index is not None
+        num_nodes = data.num_nodes
+        assert num_nodes is not None
+
+        n_sub_batch, n_id = n_mask.nonzero().t()
+        e_mask = n_mask[:, data.edge_index[0]] & n_mask[:, data.edge_index[1]]
+        e_sub_batch, e_id = e_mask.nonzero().t()
+
+        sub_edge_index = data.edge_index[:, e_id]
+        arange = torch.arange(n_id.size(0), device=data.edge_index.device)
+        node_map = data.edge_index.new_ones(num_nodes, num_nodes)
+        node_map[n_sub_batch, n_id] = arange
+        sub_edge_index += (arange * data.num_nodes)[e_sub_batch]
+        sub_edge_index = node_map.view(-1)[sub_edge_index]
+
+        return sub_edge_index, n_id, e_id, n_sub_batch, e_sub_batch
+
+    def forward(self, data: Data) -> List[Data]:
+        subgraphs = []
+        for node_id in range(data.num_nodes):
+            out = self.extract(data, node_id)
+            d = RootedSubgraphData.from_dict(data.to_dict())
+            d.sub_edge_index, d.n_id, d.e_id, d.n_sub_batch, d.e_sub_batch = out
+            subgraphs.append(d.map_data())
+        return subgraphs
+
+
+class RootedRWSubgraph(RootedSubgraph):
+    def __init__(self, walk_length: int, repeat: int = 1):
+        super().__init__()
+        self.walk_length = walk_length
+        self.repeat = repeat
+
+    def extract(
+        self,
+        data: Data,
+        node_id: int,
+    ) -> Tuple[Tensor, Tensor, Tensor, Tensor, Tensor]:
+        from torch_cluster import random_walk
+
+        assert data.edge_index is not None
+        num_nodes = data.num_nodes
+        assert num_nodes is not None
+
+        start = torch.tensor([node_id], device=data.edge_index.device)
+        start = start.view(-1, 1).repeat(1, self.repeat).view(-1)
+        walk = random_walk(data.edge_index[0], data.edge_index[1], start,
+                           self.walk_length, num_nodes=data.num_nodes)
+
+        n_mask = torch.zeros((num_nodes, num_nodes), dtype=torch.bool,
+                             device=walk.device)
+        start = start.view(-1, 1).repeat(1, (self.walk_length + 1)).view(-1)
+        n_mask[start, walk.view(-1)] = True
+
+        return self.map(data, n_mask)
+
+    def forward(self, data: Data, node_ids: List[int]) -> List[Data]:
+        subgraphs = []
+        for node_id in node_ids:
+            out = self.extract(data, node_id)
+            d = RootedSubgraphData.from_dict(data.to_dict())
+            d.sub_edge_index, d.n_id, d.e_id, d.n_sub_batch, d.e_sub_batch = out
+            subgraphs.append(d.map_data())
+        return subgraphs
+
+# Example usage
+# data = ...  # Your PyG Data object
+# node_ids = [0, 1, 2]  # List of node IDs for which to extract subgraphs
+# transform = RootedRWSubgraph(walk_length=3, repeat=2)
+# subgraphs = transform.forward(data, node_ids)
+# Now `subgraphs` is a list of Data objects representing the subgraphs for each node in node_ids
+
+
+
+
+
+
+
 
 
 class GADDataset:
