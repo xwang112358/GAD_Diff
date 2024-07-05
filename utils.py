@@ -6,7 +6,7 @@ import torch
 from torch_geometric.data import Data
 from typing import Optional, Tuple, Union
 from torch import Tensor
-
+from torch_geometric.data import InMemoryDataset
 import copy
 from abc import ABC, abstractmethod
 from typing import Any, List, Tuple
@@ -18,6 +18,29 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
 
+
+
+class SubgraphDataset(InMemoryDataset):
+    # to do: make it load the dataset by dataset = SubgraphDataset instead of torch.load() 
+    def __init__(self, root, dataset_name, subgraph_data_list: List[Data], transform=None, pre_transform=None):
+        self.subgraph_data_list = subgraph_data_list
+        self.dataset_name = dataset_name
+        super(SubgraphDataset, self).__init__(root, transform, pre_transform)
+        self.data, self.slices = self.collate(self.subgraph_data_list)
+
+    @property
+    def raw_file_names(self):
+        return []
+
+    @property
+    def processed_file_names(self):
+        return [f'{self.dataset_name}_2hop.pt']
+
+    def download(self):
+        pass
+
+    def process(self):
+        pass
 
 class RootedSubgraphData(Data):
     def __inc__(self, key: str, value: Any, *args: Any, **kwargs: Any) -> Any:
@@ -140,12 +163,6 @@ class RootedRWSubgraph(RootedSubgraph):
 # transform = RootedRWSubgraph(walk_length=3, repeat=2)
 # subgraphs = transform.forward(data, node_ids)
 # Now `subgraphs` is a list of Data objects representing the subgraphs for each node in node_ids
-
-
-
-
-
-
 
 
 
