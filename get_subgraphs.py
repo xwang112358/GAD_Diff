@@ -196,7 +196,7 @@ if __name__ == '__main__':
         print(f"Saved {args.name}_onehot.pt")
 
     elif args.add_continousX:
-        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
+        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
         torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_continuous.pt')
         print(f"Saved {args.name}_continuous.pt")
 
