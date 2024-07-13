@@ -19,7 +19,6 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
 
 
-
 class SubgraphDataset(InMemoryDataset):
     # to do: make it load the dataset by dataset = SubgraphDataset instead of torch.load() 
     def __init__(self, root, dataset_name, subgraph_data_list: List[Data], transform=None, pre_transform=None):
@@ -171,6 +170,7 @@ class GADDataset:
         graph = load_graphs(prefix + name)[0][0]
         self.name = name
         self.graph = graph
+        self.khop_subgraph = []
 
     def split(self, semi_supervised=True, trial_id=0):
         if semi_supervised:
@@ -180,7 +180,8 @@ class GADDataset:
         self.graph.ndata['test_mask'] = self.graph.ndata['test_masks'][:,trial_id]
         print(self.graph.ndata['train_mask'].sum(), self.graph.ndata['val_mask'].sum(), self.graph.ndata['test_mask'].sum())
 
-
+    def get_khop_subgraph(self, maxN, p_1hop=0.7):
+        pass
 
 
 

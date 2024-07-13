@@ -30,6 +30,7 @@ columns = ['name']
 new_row = {}
 datasets = ['reddit', 'weibo', 'amazon', 'yelp', 'tfinance',
             'elliptic', 'tolokers', 'questions', 'dgraphfin', 'tsocial', 'hetero/amazon', 'hetero/yelp']
+
 models = model_detector_dict.keys()
 
 if args.datasets is not None:
@@ -39,6 +40,7 @@ if args.datasets is not None:
     else:
         datasets = [datasets[int(t)] for t in args.datasets.split(',')]
     print('Evaluated Datasets: ', datasets)
+    # only accept int input to indicate the index of datasets
 
 if args.models is not None:
     models = args.models.split('-')
@@ -51,9 +53,9 @@ for dataset in datasets:
 
 results = pandas.DataFrame(columns=columns)
 file_id = None
-for model in models:
+for model in models: # only evaluate gcn for now 
     model_result = {'name': model}
-    for dataset_name in datasets:
+    for dataset_name in datasets: # only test reddit for now
         if model in ['CAREGNN', 'H2FD'] and 'hetero' not in dataset_name:
             continue
         time_cost = 0
@@ -64,7 +66,13 @@ for model in models:
             'metric': 'AUPRC',
             'inductive': bool(args.inductive)
         }
+        # load the initial dataset
         data = Dataset(dataset_name)
+
+        # get lots of k-hop subgraphs for the dataset 
+
+
+        augment_config = {} 
         model_config = {'model': model, 'lr': 0.01, 'drop_rate': 0}
         if dataset_name == 'tsocial':
             model_config['h_feats'] = 16
@@ -72,7 +80,7 @@ for model in models:
                 # continue
 
         auc_list, pre_list, rec_list = [], [], []
-        for t in range(args.trials):
+        for t in range(args.trials):  # set trials to 1
             torch.cuda.empty_cache()
             print("Dataset {}, Model {}, Trial {}".format(dataset_name, model, t))
             data.split(args.semi_supervised, t)

@@ -65,7 +65,7 @@ class BaseGNNDetector(BaseDetector):
     def train(self):
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'])
         train_labels, val_labels, test_labels = self.labels[self.train_mask], self.labels[self.val_mask], self.labels[self.test_mask]
-        for e in range(self.train_config['epochs']):
+        for e in range(self.train_config['epochs']): #200
             self.model.train()
             logits = self.model(self.train_graph)
             loss = F.cross_entropy(logits[self.train_graph.ndata['train_mask']], train_labels,
@@ -95,6 +95,7 @@ class BaseGNNDetector(BaseDetector):
             else:
                 self.patience_knt += 1
                 if self.patience_knt > self.train_config['patience']:
+                    print('Early stopping at epoch {}'.format(e))
                     break
         return test_score
 

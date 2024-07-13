@@ -112,7 +112,6 @@ if __name__ == '__main__':
         # if use_svd:
         #     svd = SVDFeatureReduction(svd_out_channels)
         #     pyg_data = svd(pyg_data)
-            
         print(f"Loaded {args.name} PyG data")
         print(pyg_data.num_nodes)
 
