@@ -24,6 +24,11 @@ parser.add_argument('--semi_supervised', type=int, default=0)
 parser.add_argument('--inductive', type=int, default=0)
 parser.add_argument('--models', type=str, default=None)
 parser.add_argument('--datasets', type=str, default=None)
+# augmentation arguments
+parser.add_argument('--maxNode', type=int, default=150)
+parser.add_argument('--NumSubgraph', type=int, default=50)
+parser.add_argument('--lggm_variant', type=str, default='lggm')
+
 args = parser.parse_args()
 
 columns = ['name']
@@ -67,9 +72,7 @@ for model in models: # only evaluate gcn for now
             'inductive': bool(args.inductive)
         }
         # load the initial dataset
-        data = Dataset(dataset_name)
-
-        # get lots of k-hop subgraphs for the dataset 
+        data = GADDataset(dataset_name)
 
 
         augment_config = {} 
@@ -84,6 +87,16 @@ for model in models: # only evaluate gcn for now
             torch.cuda.empty_cache()
             print("Dataset {}, Model {}, Trial {}".format(dataset_name, model, t))
             data.split(args.semi_supervised, t)
+            # get the subgraph data for augmentation
+            
+            # if t % 10 == 0:
+            print('samping subgraphs')
+            sampled_subgraphs = data.get_local_subgraphs(args.maxNode, args.NumSubgraph)
+                # get the augmented data for training
+                # data = data_augmentation(data, sampled_subgraphs, args.lggm_variant)
+            
+            
+            print('Sampled subgraphs: ', len(sampled_subgraphs))
             seed = seed_list[t]
             set_seed(seed)
             train_config['seed'] = seed
