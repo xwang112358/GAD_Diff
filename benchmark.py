@@ -4,6 +4,9 @@ from utils import *
 import pandas
 import os
 import warnings
+from torch_geometric.loader import DataLoader
+
+
 warnings.filterwarnings("ignore")
 seed_list = list(range(3407, 10000, 10))
 
@@ -92,6 +95,7 @@ for model in models: # only evaluate gcn for now
             # if t % 10 == 0:
             print('samping subgraphs')
             sampled_subgraphs = data.get_local_subgraphs(args.maxNode, args.NumSubgraph)
+            augment_loader = DataLoader(sampled_subgraphs, batch_size=5, shuffle=False)
                 # get the augmented data for training
                 # data = data_augmentation(data, sampled_subgraphs, args.lggm_variant)
             

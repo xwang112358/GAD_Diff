@@ -12,7 +12,7 @@ from abc import ABC, abstractmethod
 from typing import Any, List, Tuple
 import torch
 from torch import Tensor
-from torch_geometric.utils import subgraph, to_undirected
+from torch_geometric.utils import subgraph, to_undirected, remove_self_loops
 from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
@@ -126,10 +126,20 @@ def get_khop_subgraph(pyg_data, node_idx, maxN):
         subsample_subset = hop2_subset
         subsample_edge_index = hop2_edge_index
     
+    # dict is not iterable by pytorch dataloader, convert relabeled_to_original to tensor
+    relabeled_to_original = torch.tensor(list(relabeled_to_original.values()))
 
+    x = pyg_data.y[subsample_subset]
+    # convert x to one-hot encoding
+    x = torch.nn.functional.one_hot(x, num_classes=2).float()
+    edge_index = subsample_edge_index
+    edge_attr = torch.tensor([[0, 1] for _ in range(subsample_edge_index.shape[1])])
+    extra_x = pyg_data.x[subsample_subset]
+    edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
+    y = y = torch.empty(1, 0)
 
-    subgraph_data = Data(x=pyg_data.y[subsample_subset], edge_index=subsample_edge_index, extra_x = pyg_data.x[subsample_subset],
-                          num_nodes=len(subsample_subset), node_mapping = relabeled_to_original)
+    subgraph_data = Data(x=x, edge_index=edge_index, edge_attr = edge_attr, extra_x = extra_x,
+                          num_nodes=len(subsample_subset), node_mapping = relabeled_to_original, y=y)
 
     subgraph_data.center_node_idx = node_idx
 
