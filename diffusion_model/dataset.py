@@ -172,7 +172,7 @@ def init_dataset(dataset_name, dataloader):
     # print('Distribution of Number of Nodes:', n_nodes)
     # print('Distribution of Node Types:', node_types)
     # print('Distribution of Edge Types:', edge_types)
-    print(n_nodes)
+    # print(n_nodes)
 
     return num_classes, max_n_nodes, nodes_dist, edge_types, node_types, n_nodes
 

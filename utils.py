@@ -18,7 +18,69 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
 from torch_geometric.utils import to_networkx, k_hop_subgraph, to_dense_adj, from_dgl
 
+### edge mapping 
+def assert_edges_exist(orig_edge_index, edge_index):
+    # Function to convert [2, num_edges] to a unique identifier for each edge
+    def edge_to_unique_id(edge_index):
+        max_node = max(orig_edge_index.max(), edge_index.max()) + 1
+        return edge_index[0] * max_node + edge_index[1]
 
+    # Convert edge indices to unique identifiers
+    orig_edge_ids = edge_to_unique_id(orig_edge_index)
+    edge_ids = edge_to_unique_id(edge_index)
+
+    # Check for each edge in edge_index if it exists in orig_edge_index
+    exists = torch.isin(edge_ids, orig_edge_ids)
+
+    # Assert all edges in edge_index exist in orig_edge_index
+    assert exists.all(), "Some edges in edge_index do not exist in orig_edge_index."
+
+
+def remove_edges(orig_edge_index, edge_index):
+    # Function to convert [2, num_edges] to unique identifier format for each edge
+    def edge_to_tuple_tensor(edge_index):
+        return torch.cat((edge_index[0].unsqueeze(1), edge_index[1].unsqueeze(1)), dim=1)
+
+    # Convert edge indices to tuple format
+    orig_edges = edge_to_tuple_tensor(orig_edge_index)
+    remove_edges = edge_to_tuple_tensor(edge_index)
+
+    # Use a unique representation of each edge for easy comparison
+    # Convert each pair to a large number (assuming max node index is reasonably small)
+    max_node = max(orig_edge_index.max(), edge_index.max()) + 1
+    orig_edges_flat = orig_edges[:, 0] * max_node + orig_edges[:, 1]
+    remove_edges_flat = remove_edges[:, 0] * max_node + remove_edges[:, 1]
+
+    # Create a mask for original edges not in remove_edges
+    remaining_edges_mask = ~(orig_edges_flat.unsqueeze(1) == remove_edges_flat).any(dim=1)
+
+    # Filter the original edges using the mask
+    remaining_edges = orig_edge_index[:, remaining_edges_mask]
+
+    return remaining_edges
+
+def count_duplicate_edges(edge_index):
+    # Function to convert [2, num_edges] to a unique identifier for each edge
+    def edge_to_unique_id(edge_index):
+        max_node = edge_index.max() + 1
+        return edge_index[0] * max_node + edge_index[1]
+
+    # Convert edge indices to unique identifiers
+    edge_ids = edge_to_unique_id(edge_index)
+
+    # Sort edge identifiers to group duplicates together
+    sorted_edge_ids = torch.sort(edge_ids).values
+
+    # Find duplicates: where the shifted values are equal, there is a duplicate
+    duplicates = sorted_edge_ids[1:] == sorted_edge_ids[:-1]
+
+    # Count the number of true values, which represent duplicates
+    num_duplicates = duplicates.sum().item()
+
+    return num_duplicates
+
+
+### subgraph sampling
 
 class GADDataset:
     def __init__(self, name='tfinance', prefix='datasets/'):

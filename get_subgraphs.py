@@ -104,7 +104,7 @@ if __name__ == '__main__':
     # use_norm = args.use_norm
     
     try:
-        pyg_data = torch.load(f'./pyg_dataset/{args.name}.pt')
+        pyg_data = torch.load(f'./pyg_dataset/undirected_{args.name}.pt')
         
         # if use_norm:
         #     normalize = NormalizeFeatures()
@@ -139,77 +139,79 @@ if __name__ == '__main__':
             pyg_data.x = pyg_data.feature
             del pyg_data.feature
         
-        torch.save(pyg_data, f'./pyg_dataset/{args.name}.pt')
+
+        pyg_data.edge_index = to_undirected(pyg_data.edge_index)
+        torch.save(pyg_data, f'./pyg_dataset/undirected_{args.name}.pt')
         print(pyg_data)
 
     # Ensure edges are undirected
     pyg_data.edge_index = to_undirected(pyg_data.edge_index)
 
-    nx_graph = to_networkx(pyg_data, to_undirected=True)
-    components = list(nx.connected_components(nx_graph))
-    if len(components) > 1:
-        print(f"Graph contains {len(components)} connected components.")
-    else:
-        print("Graph is connected.")
+    # nx_graph = to_networkx(pyg_data, to_undirected=True)
+    # components = list(nx.connected_components(nx_graph))
+    # if len(components) > 1:
+    #     print(f"Graph contains {len(components)} connected components.")
+    # else:
+    #     print("Graph is connected.")
     
-    anomaly_indices = torch.nonzero(pyg_data.y, as_tuple=False).squeeze().tolist()
+    # anomaly_indices = torch.nonzero(pyg_data.y, as_tuple=False).squeeze().tolist()
 
-    train_indices = torch.nonzero(pyg_data.train_masks, as_tuple=False).squeeze().tolist()
-    valid_indices = torch.nonzero(pyg_data.val_masks, as_tuple=False).squeeze().tolist()
-    test_indices = torch.nonzero(pyg_data.test_masks, as_tuple=False).squeeze().tolist()
+    # train_indices = torch.nonzero(pyg_data.train_masks, as_tuple=False).squeeze().tolist()
+    # valid_indices = torch.nonzero(pyg_data.val_masks, as_tuple=False).squeeze().tolist()
+    # test_indices = torch.nonzero(pyg_data.test_masks, as_tuple=False).squeeze().tolist()
 
-    train_anomaly_indices = list(set(anomaly_indices).intersection(set(train_indices)))
-    valid_anomaly_indices = list(set(anomaly_indices).intersection(set(valid_indices)))
-    # test_anomaly_indices = list(set(anomaly_indices).intersection(set(test_indices)))
+    # train_anomaly_indices = list(set(anomaly_indices).intersection(set(train_indices)))
+    # valid_anomaly_indices = list(set(anomaly_indices).intersection(set(valid_indices)))
+    # # test_anomaly_indices = list(set(anomaly_indices).intersection(set(test_indices)))
     
-    print(111)
-    print(pyg_data.y)
+    # print(111)
+    # print(pyg_data.y)
 
-    # Create subgraphs with progress bar
-    train_subgraphs = [create_subgraph((pyg_data, idx, 0, args.maxN)) for idx in tqdm(train_anomaly_indices, desc='Processing train subgraphs')]
-    valid_subgraphs = [create_subgraph((pyg_data, idx, 1, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing validation subgraphs')]
-    # test_subgraphs = [create_subgraph((pyg_data, idx, 2, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
+    # # Create subgraphs with progress bar
+    # train_subgraphs = [create_subgraph((pyg_data, idx, 0, args.maxN)) for idx in tqdm(train_anomaly_indices, desc='Processing train subgraphs')]
+    # valid_subgraphs = [create_subgraph((pyg_data, idx, 1, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing validation subgraphs')]
+    # # test_subgraphs = [create_subgraph((pyg_data, idx, 2, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
 
-    # calculate the average clustering coefficient of the subgraphs
-    # train_clustering = [nx.average_clustering(to_networkx(subgraph)) for subgraph in train_subgraphs]
-    # print(f"Average clustering coefficient of train subgraphs: {np.mean(train_clustering)}")
+    # # calculate the average clustering coefficient of the subgraphs
+    # # train_clustering = [nx.average_clustering(to_networkx(subgraph)) for subgraph in train_subgraphs]
+    # # print(f"Average clustering coefficient of train subgraphs: {np.mean(train_clustering)}")
     
-    print(f"Created {len(train_subgraphs)} training subgraphs.")
-    print(f"Created {len(valid_subgraphs)} validation subgraphs.")
-    # print(f"Created {len(test_subgraphs)} test subgraphs.")
+    # print(f"Created {len(train_subgraphs)} training subgraphs.")
+    # print(f"Created {len(valid_subgraphs)} validation subgraphs.")
+    # # print(f"Created {len(test_subgraphs)} test subgraphs.")
 
-    subgraph_dataset = train_subgraphs + valid_subgraphs # + test_subgraphs
+    # subgraph_dataset = train_subgraphs + valid_subgraphs # + test_subgraphs
 
 
-    for graph in subgraph_dataset:
-        print(graph.x)
-        print(graph.y)
-        break
+    # for graph in subgraph_dataset:
+    #     print(graph.x)
+    #     print(graph.y)
+    #     break
 
-    if not os.path.exists(f'./pyg_dataset/{args.name}'):
-        os.makedirs(f'./pyg_dataset/{args.name}')
+    # if not os.path.exists(f'./pyg_dataset/{args.name}'):
+    #     os.makedirs(f'./pyg_dataset/{args.name}')
 
-    if args.add_labels:
-        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2)) for subgraph in subgraph_dataset]
-        torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_onehot.pt')
-        print(f"Saved {args.name}_onehot.pt")
+    # if args.add_labels:
+    #     train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2)) for subgraph in subgraph_dataset]
+    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_onehot.pt')
+    #     print(f"Saved {args.name}_onehot.pt")
 
-    elif args.add_continousX:
-        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
-        torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_continuous.pt')
-        print(f"Saved {args.name}_continuous.pt")
+    # elif args.add_continousX:
+    #     train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
+    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_continuous.pt')
+    #     print(f"Saved {args.name}_continuous.pt")
 
-    else:
-        train_data = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in subgraph_dataset]
-        torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_adj.pt')
-        print(f"Saved {args.name}_adj.pt")
+    # else:
+    #     train_data = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in subgraph_dataset]
+    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_adj.pt')
+    #     print(f"Saved {args.name}_adj.pt")
         
         
-    # print the size of each train_adj
-    for adj, x in train_data:
-        print(adj.shape, x.shape)
-        print(x)
-        break
+    # # print the size of each train_adj
+    # for adj, x in train_data:
+    #     print(adj.shape, x.shape)
+    #     print(x)
+    #     break
 
 
         
