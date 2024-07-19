@@ -6,3 +6,4 @@ subgraphs
 datasets.zip
 local_subgraphs
 checkpoints
+*.pt

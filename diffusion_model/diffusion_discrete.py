@@ -336,18 +336,18 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_feature
         print('n_nodes',n_nodes)
         
         X, E = dense_data.X, dense_data.E
-        print(111, X.shape, E.shape)
+        # print(111, X.shape, E.shape)
         self.print("Applying noise...")
         noisy_data = self.apply_noise(X, E, data.y, node_mask, augment=True)
         self.print(noisy_data['E_t'].shape, noisy_data['X_t'].shape, noisy_data['y_t'].shape)
         self.print("Predicting...")
         
         X, E, y = noisy_data['X_t'], noisy_data['E_t'], noisy_data['y_t']
-        print(222, X.shape, E.shape)
+        # print(222, X.shape, E.shape)
         assert (E == torch.transpose(E, 1, 2)).all()
         
         for s_int in reversed(range(0, self.aug_steps)):
-            self.print('time step:', s_int)
+            # self.print('time step:', s_int)
             s_array = s_int * torch.ones((X.shape[0], 1)).type_as(y)
             t_array = s_array + 1
             s_norm = s_array / self.T
@@ -387,11 +387,13 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_feature
         
         self.augment_samples.extend(augmented_list)
         
-        return None
+        return self.augment_samples
 
-    def on_predict_epoch_end(self) -> None:
+    def on_predict_epoch_end(self):
         # save the self.augment_samples in pt file
         torch.save(self.augment_samples, 'augment_samples.pt')
+        # print(self.augment_samples)
+        # return self.augment_samples
 
 
 
