@@ -8,13 +8,12 @@ from typing import Any, Dict, Iterable, List, Literal, Optional, Tuple, Union
 from torch_geometric.data import Data, InMemoryDataset
 from torch_geometric.utils import to_networkx, k_hop_subgraph, to_dense_adj, from_dgl
 import torch.nn.functional as F
-
 import networkx as nx
 from tqdm import tqdm
 from utils import GADDataset, random_walk_until_maxN
 import os
 import random
-from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
+from utils import get_khop_subgraph_v1, get_khop_subgraph
 
 # from dgl.data.utils import load_graphs
 
@@ -34,46 +33,6 @@ from torch_geometric.transforms import NormalizeFeatures, SVDFeatureReduction
 # 1. fix the k to 2  (finished)
 # 2. get 2-hop subgraph for each node (finished)
 # 3. random walk from the center node to sample the nodes (finished)
-
-def get_khop_subgraph(pyg_data, node_idx, maxN):
-    # Extract 2-hop subgraph
-    hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
-        node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
-
-    # Convert the 2-hop subgraph to undirected
-    hop2_edge_index = to_undirected(hop2_edge_index)
-
-    # Perform random walk to sample nodes until maxN unique nodes are reached
-    if len(hop2_subset) > maxN:
-        walk_start = hop2_mapping[0].item() # center node
-        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
-        subsample_subset = torch.unique(walks.flatten())
-        
-        while len(subsample_subset) < maxN:
-            # keep random walking until we have maxN unique nodes
-            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=6)
-            # concatenate the new walks with the previous walks
-            subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
-
-        if len(subsample_subset) > maxN:
-            subsample_subset = subsample_subset[:maxN]
-
-        subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
-    else:
-        subsample_subset = hop2_subset
-        subsample_edge_index = hop2_edge_index
-
-    # Create subgraph data object
-    subgraph_data = Data(x=pyg_data.x[subsample_subset], edge_index=subsample_edge_index, y = pyg_data.y[subsample_subset],
-                          num_nodes=len(subsample_subset))
-
-    # Set the label for the subgraph based on the original node's label
-    # label = pyg_data.y[node_idx].item()
-    # subgraph_data.y = torch.tensor([label], dtype=torch.long)
-    subgraph_data.center_node_idx = node_idx
-
-    return subgraph_data
-
 
 def create_subgraph(args):
     # record the size of the original k-hop subgraph
@@ -104,7 +63,7 @@ if __name__ == '__main__':
     # use_norm = args.use_norm
     
     try:
-        pyg_data = torch.load(f'./pyg_dataset/undirected_{args.name}.pt')
+        pyg_data = torch.load(f'./pyg_dataset/{args.name}.pt')
         
         # if use_norm:
         #     normalize = NormalizeFeatures()
@@ -141,73 +100,89 @@ if __name__ == '__main__':
         
 
         pyg_data.edge_index = to_undirected(pyg_data.edge_index)
-        torch.save(pyg_data, f'./pyg_dataset/undirected_{args.name}.pt')
+        torch.save(pyg_data, f'./pyg_dataset/{args.name}.pt')
         print(pyg_data)
 
     # Ensure edges are undirected
     pyg_data.edge_index = to_undirected(pyg_data.edge_index)
 
-    # nx_graph = to_networkx(pyg_data, to_undirected=True)
-    # components = list(nx.connected_components(nx_graph))
-    # if len(components) > 1:
-    #     print(f"Graph contains {len(components)} connected components.")
-    # else:
-    #     print("Graph is connected.")
+    nx_graph = to_networkx(pyg_data, to_undirected=True)
+    components = list(nx.connected_components(nx_graph))
+    if len(components) > 1:
+        print(f"Graph contains {len(components)} connected components.")
+    else:
+        print("Graph is connected.")
     
-    # anomaly_indices = torch.nonzero(pyg_data.y, as_tuple=False).squeeze().tolist()
+    anomaly_indices = torch.nonzero(pyg_data.y, as_tuple=False).squeeze().tolist()
+    
 
+    anomaly_subgraphs = []
+    i=0
+    pbar = tqdm(total=1500)
+    while i < 1500:
+        node_idx = random.choice(anomaly_indices)
+        subgraph = create_subgraph((pyg_data, node_idx, 0, args.maxN))
+        anomaly_subgraphs.append(subgraph)
+        i += 1
+        pbar.update(1)
+    pbar.close()    
+    
+    torch.save(anomaly_subgraphs, f'./pyg_dataset/large_{args.name}/{args.name}_anomaly.pt')
+    
     # train_indices = torch.nonzero(pyg_data.train_masks, as_tuple=False).squeeze().tolist()
     # valid_indices = torch.nonzero(pyg_data.val_masks, as_tuple=False).squeeze().tolist()
     # test_indices = torch.nonzero(pyg_data.test_masks, as_tuple=False).squeeze().tolist()
 
     # train_anomaly_indices = list(set(anomaly_indices).intersection(set(train_indices)))
     # valid_anomaly_indices = list(set(anomaly_indices).intersection(set(valid_indices)))
-    # # test_anomaly_indices = list(set(anomaly_indices).intersection(set(test_indices)))
+    # test_anomaly_indices = list(set(anomaly_indices).intersection(set(test_indices)))
     
-    # print(111)
-    # print(pyg_data.y)
-
-    # # Create subgraphs with progress bar
+    # Create subgraphs with progress bar
     # train_subgraphs = [create_subgraph((pyg_data, idx, 0, args.maxN)) for idx in tqdm(train_anomaly_indices, desc='Processing train subgraphs')]
     # valid_subgraphs = [create_subgraph((pyg_data, idx, 1, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing validation subgraphs')]
-    # # test_subgraphs = [create_subgraph((pyg_data, idx, 2, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
+    # test_subgraphs = [create_subgraph((pyg_data, idx, 2, args.maxN)) for idx in tqdm(valid_anomaly_indices, desc='Processing test subgraphs')]
 
-    # # calculate the average clustering coefficient of the subgraphs
-    # # train_clustering = [nx.average_clustering(to_networkx(subgraph)) for subgraph in train_subgraphs]
-    # # print(f"Average clustering coefficient of train subgraphs: {np.mean(train_clustering)}")
+    # calculate the average clustering coefficient of the subgraphs
+    # train_clustering = [nx.average_clustering(to_networkx(subgraph)) for subgraph in train_subgraphs]
+    # print(f"Average clustering coefficient of train subgraphs: {np.mean(train_clustering)}")
     
     # print(f"Created {len(train_subgraphs)} training subgraphs.")
     # print(f"Created {len(valid_subgraphs)} validation subgraphs.")
     # # print(f"Created {len(test_subgraphs)} test subgraphs.")
 
-    # subgraph_dataset = train_subgraphs + valid_subgraphs # + test_subgraphs
+    # subgraph_dataset = train_subgraphs + valid_subgraphs  + test_subgraphs
+
+    # set the random seed
+    # random.seed(args.seed)
+    # np.random.seed(args.seed)
 
 
-    # for graph in subgraph_dataset:
-    #     print(graph.x)
-    #     print(graph.y)
-    #     break
+    subgraph_dataset = anomaly_subgraphs
+    for graph in anomaly_subgraphs:
+        print(graph.x)
+        print(graph.y)
+        break
 
-    # if not os.path.exists(f'./pyg_dataset/{args.name}'):
-    #     os.makedirs(f'./pyg_dataset/{args.name}')
+    if not os.path.exists(f'./pyg_dataset/large_{args.name}'):
+        os.makedirs(f'./pyg_dataset/large_{args.name}')
 
-    # if args.add_labels:
-    #     train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2)) for subgraph in subgraph_dataset]
-    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_onehot.pt')
-    #     print(f"Saved {args.name}_onehot.pt")
+    if args.add_labels:
+        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2)) for subgraph in subgraph_dataset]
+        torch.save(train_data, f'./pyg_dataset/large_{args.name}/{args.name}_onehot.pt')
+        print(f"Saved {args.name}_onehot.pt")
 
-    # elif args.add_continousX:
-    #     train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
-    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_continuous.pt')
-    #     print(f"Saved {args.name}_continuous.pt")
+    elif args.add_continousX:
+        train_data = [(to_dense_adj(subgraph.edge_index).squeeze(0), F.one_hot(subgraph.y, num_classes=2), torch.cat([subgraph.x, subgraph.y.unsqueeze(1)], dim=1)) for subgraph in subgraph_dataset]
+        torch.save(train_data, f'./pyg_dataset/large_{args.name}/{args.name}_continuous.pt')
+        print(f"Saved {args.name}_continuous.pt")
 
-    # else:
-    #     train_data = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in subgraph_dataset]
-    #     torch.save(train_data, f'./pyg_dataset/{args.name}/{args.name}_adj.pt')
-    #     print(f"Saved {args.name}_adj.pt")
+    else:
+        train_data = [to_dense_adj(subgraph.edge_index).squeeze(0) for subgraph in subgraph_dataset]
+        torch.save(train_data, f'./pyg_dataset/large_{args.name}/{args.name}_adj.pt')
+        print(f"Saved {args.name}_adj.pt")
         
         
-    # # print the size of each train_adj
+    # print the size of each train_adj
     # for adj, x in train_data:
     #     print(adj.shape, x.shape)
     #     print(x)

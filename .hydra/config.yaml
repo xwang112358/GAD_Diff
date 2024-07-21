@@ -66,4 +66,4 @@ dataset:
   remove_h: null
   sample: eco
 augment:
-  diffusion_steps: 500
+  diffusion_steps: 10

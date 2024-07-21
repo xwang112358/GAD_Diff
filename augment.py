@@ -2,7 +2,7 @@ import torch
 from torch_geometric.utils import from_dgl, to_networkx, k_hop_subgraph
 import random
 from torch_geometric.data import Data
-from torch_geometric.utils import subgraph, to_undirected
+from torch_geometric.utils import subgraph, to_undirected, coalesce
 from torch_cluster import random_walk
 from utils import *
 from torch_geometric.loader import DataLoader
@@ -11,11 +11,7 @@ from pytorch_lightning import Trainer
 import sys
 import os
 from omegaconf import DictConfig
-# local_subgraph = torch.load('local_subgraphs/reddit_0.pt')
-# dataloader = DataLoader(local_subgraph, batch_size=5, shuffle=False)
-# for i, batch in enumerate(dataloader):
-#     print(i, batch)
-#     break
+
 import hydra
 from diffusion_model.dataset import init_dataset, compute_input_output_dims 
 from diffusion_model.extra_features import ExtraFeatures, DummyExtraFeatures
@@ -84,38 +80,50 @@ def main(cfg: DictConfig):
                       accumulate_grad_batches=cfg.train.accumulate_grad_batches)
 
     # get the augmented data (edge_index)
-    augment_samples = trainer.predict(model, aug_loader, ckpt_path = 'checkpoints/reddit/reddit_onehot.ckpt')
-    print(type(augment_samples))
-
-
-
+    trainer.predict(model, aug_loader, ckpt_path = 'checkpoints/reddit/reddit_onehot.ckpt')
+    augment_samples = model.get_augment_samples()
+    
+    
+    temp_edge_index = orig_edge_index
+    
+    # for i, batch in enumerate(aug_loader):
+    #     edge_index = batch.edge_index
+    #     node_mapping = batch.node_mapping 
+    #     print('node mapping', node_mapping.shape)
+    #     augment_sample = augment_samples[i]
+    #     print('augment_sample', augment_sample.x.shape)
+    
+    
     # mapping the augmented data to the original data
     for i, batch in enumerate(aug_loader):
         print(i, batch)
         print(batch.edge_index.shape)
-
-        # print(batch.node_mapping.shape) 
-        # flat_tensor = batch.edge_index.flatten() 
-        # unique_values = torch.unique(flat_tensor)
-        # print(unique_values.numel())
 
         edge_index = batch.edge_index
         node_mapping = batch.node_mapping
         remapped_edge_index = node_mapping[edge_index]
 
         # remove the original subgraph topology
-        assert_edges_exist(orig_edge_index, remapped_edge_index)
-        removed_edge_index = remove_edges(orig_edge_index, remapped_edge_index)
+        # assert_edges_exist(orig_edge_index, remapped_edge_index)
+        temp_edge_index = remove_edges(temp_edge_index, remapped_edge_index)
         print(count_duplicate_edges(remapped_edge_index))
 
-        print(orig_edge_index.shape)
-        print(removed_edge_index.shape)
+        print('originally',orig_edge_index.shape)
+        print('remove to', temp_edge_index.shape)
         print(remapped_edge_index.shape)
 
-        augmented_data = augment_samples[i][0]
+        augmented_data = augment_samples[i]  # a list of pyg data objects
         print(augmented_data.edge_index.shape, edge_index.shape)
-
-        break
+        augmented_edge_index = augmented_data.edge_index
+        remapped_augmented_edge_index = node_mapping[augmented_edge_index]
+        print('augment',remapped_augmented_edge_index.shape)
+        
+        # concatenate the removed_edge_index and the remapped_augmented_edge_index
+        temp_edge_index = torch.cat((temp_edge_index, remapped_augmented_edge_index), dim=1)
+        temp_edge_index = coalesce(temp_edge_index)
+        print('final', temp_edge_index.shape)
+        print(temp_edge_index)
+        
 
 
 

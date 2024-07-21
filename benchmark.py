@@ -29,7 +29,7 @@ parser.add_argument('--models', type=str, default=None)
 parser.add_argument('--datasets', type=str, default=None)
 # augmentation arguments
 parser.add_argument('--maxNode', type=int, default=150)
-parser.add_argument('--NumSubgraph', type=int, default=50)
+parser.add_argument('--NumSubgraph', type=int, default=10)
 parser.add_argument('--lggm_variant', type=str, default='lggm')
 
 args = parser.parse_args()
@@ -94,7 +94,7 @@ for model in models: # only evaluate gcn for now
             
             # if t % 10 == 0:
             print('samping subgraphs')
-            sampled_subgraphs = data.get_local_subgraphs(args.maxNode, args.NumSubgraph)
+            sampled_subgraphs = data.get_local_subgraphs(args.maxNode, args.NumSubgraph, )
             augment_loader = DataLoader(sampled_subgraphs, batch_size=5, shuffle=False)
                 # get the augmented data for training
                 # data = data_augmentation(data, sampled_subgraphs, args.lggm_variant)

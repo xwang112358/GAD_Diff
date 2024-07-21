@@ -15,7 +15,7 @@ from diffusion_model.metrics.abstract_metrics import SumExceptBatchMetric, SumEx
 import diffusion_model.utils as utils
 
 
-class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_features 
+class DiscreteDenoisingDiffusion(pl.LightningModule):  
     def __init__(self, cfg, input_dims, output_dims, nodes_dist, node_types, edge_types, extra_features, domain_features, data_loaders, sampling_metrics, augment = False):
         super().__init__()
 
@@ -371,6 +371,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_feature
         for i in range(X.shape[0]):
             from torch_geometric.data import Data
             n = n_nodes[i]
+            print(666, n)
             X_i = X[i, :n].cpu()   # n
             E_i = E[i, :n, :n].cpu() # 1 * n * n * de
             print(444, X_i.shape, E_i.shape)
@@ -387,7 +388,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_feature
         
         self.augment_samples.extend(augmented_list)
         
-        return self.augment_samples
+        # return self.augment_samples  # need change
 
     def on_predict_epoch_end(self):
         # save the self.augment_samples in pt file
@@ -395,6 +396,8 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):   # replace domain_feature
         # print(self.augment_samples)
         # return self.augment_samples
 
+    def get_augment_samples(self):
+        return self.augment_samples
 
 
     def kl_prior(self, X, E, node_mask):
