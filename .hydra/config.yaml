@@ -39,14 +39,6 @@ model:
   lambda_train:
   - 5
   - 0
-  normalize_factors:
-  - 2
-  - 1
-  - 1
-  norm_biases:
-  - 0
-  - 0
-  - 0
 train:
   n_epochs: 300
   batch_size: 8
@@ -65,5 +57,25 @@ dataset:
   name: bio
   remove_h: null
   sample: eco
+gad:
+  model_config:
+    lr: 0.01
+    drop_rate: 0
+  train_config:
+    device: cuda
+    start_aug_epoch: 50
+    aug_interval: 10
+    epochs: 200
+    patience: 100
+    metric: AUPRC
+    inductive: false
+  trials: 1
+  semi_supervised: 0
+  models: GCN
+  datasets: '0'
+  inductive: false
 augment:
-  diffusion_steps: 10
+  maxNode: 150
+  NumSubgraphs: 10
+  diffusion_steps: 5
+  lggm_variant: onehot

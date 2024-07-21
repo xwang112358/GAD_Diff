@@ -1,9 +1,11 @@
-from setuptools import setup, find_packages
+import hydra
+from omegaconf import DictConfig, OmegaConf
+# load yaml file by hydra
 
-setup(
-    name='diffusion_model',
-    version='0.1',
-    packages=find_packages(),
-    include_package_data=True,
-    install_requires=[],
-)
+@hydra.main(config_path='./configs', config_name='config')
+def my_app(cfg):
+    # Access the YAML file contents through the cfg object
+    print(type(cfg))
+    print(cfg.general.name)
+if __name__ == "__main__":
+    my_app()

@@ -7,3 +7,5 @@ datasets.zip
 local_subgraphs
 checkpoints
 *.pt
+lightning_logs
+results

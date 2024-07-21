@@ -12,10 +12,13 @@ import pandas as pd
 import itertools
 import psutil, os
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor, sum_models
+from torch_geometric.loader import DataLoader
+from augment import augmentation
 
 
 class BaseDetector(object):
-    def __init__(self, train_config, model_config, data):
+    def __init__(self, cfg, train_config, model_config, data):
+        self.cfg = cfg
         self.model_config = model_config
         self.train_config = train_config
         self.data = data
@@ -27,6 +30,7 @@ class BaseDetector(object):
         self.test_mask = graph.ndata['test_mask'].bool()
         self.weight = (1 - self.labels[self.train_mask]).sum().item() / self.labels[self.train_mask].sum().item()
         self.source_graph = graph
+        self.source_pyg_graph = self.data.pyg_graph
         print(train_config['inductive'])
         if train_config['inductive'] == False:
             self.train_graph = graph
@@ -54,10 +58,12 @@ class BaseDetector(object):
         score['RecK'] = sum(labels[probs.argsort()[-k:]]) / sum(labels)
         return score
 
+    def train_with_augment(self):
+        pass
 
 class BaseGNNDetector(BaseDetector):
-    def __init__(self, train_config, model_config, data):
-        super().__init__(train_config, model_config, data)
+    def __init__(self, cfg, train_config, model_config, data):
+        super().__init__(cfg, train_config, model_config, data)
         gnn = globals()[model_config['model']]
         model_config['in_feats'] = self.data.graph.ndata['feature'].shape[1]
         self.model = gnn(**model_config).to(train_config['device'])
@@ -98,6 +104,53 @@ class BaseGNNDetector(BaseDetector):
                     print('Early stopping at epoch {}'.format(e))
                     break
         return test_score
+    
+    def train_with_augment(self):
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'])
+        train_labels, val_labels, test_labels = self.labels[self.train_mask], self.labels[self.val_mask], self.labels[self.test_mask]
+        for e in range(self.train_config['epochs']):
+            self.model.train()
+            logits = self.model(self.train_graph)
+            loss = F.cross_entropy(logits[self.train_graph.ndata['train_mask']], train_labels,
+                                   weight=torch.tensor([1., self.weight], device=self.labels.device))
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+
+            if e >= self.train_config['start_aug_epoch'] and e % self.train_config['aug_interval'] == 0:
+                sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
+                augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
+                augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)
+
+                num_nodes = self.source_graph.number_of_nodes()
+                num_edges = self.source_graph.number_of_edges()
+                src, dst = augment_edge_index
+                self.temp_graph = dgl.graph((src, dst), num_nodes=num_nodes).to(self.train_config['device'])
+                for key in self.source_graph.ndata.keys():
+                    self.temp_graph.ndata[key] = self.source_graph.ndata[key]
+
+            if self.model_config['drop_rate'] > 0 or self.train_config['inductive']:
+                self.model.eval()
+                logits = self.model(self.val_graph)
+            probs = logits.softmax(1)[:, 1]
+            val_score = self.eval(val_labels, probs[self.val_graph.ndata['val_mask']])
+            if val_score[self.train_config['metric']] > self.best_score:
+                if self.train_config['inductive']:
+                    logits = self.model(self.source_graph)
+                    probs = logits.softmax(1)[:, 1]
+                self.patience_knt = 0
+                self.best_score = val_score[self.train_config['metric']]
+                test_score = self.eval(test_labels, probs[self.test_mask])
+                print('Epoch {}, Loss {:.4f}, Val AUC {:.4f}, PRC {:.4f}, RecK {:.4f}, test AUC {:.4f}, PRC {:.4f}, RecK {:.4f}'.format(
+                    e, loss, val_score['AUROC'], val_score['AUPRC'], val_score['RecK'],
+                    test_score['AUROC'], test_score['AUPRC'], test_score['RecK']))
+            else:
+                self.patience_knt += 1
+                if self.patience_knt > self.train_config['patience']:
+                    print('Early stopping at epoch {}'.format(e))
+                    break
+        return test_score
+
 
 # RGCN, HGT
 class HeteroGNNDetector(BaseDetector):

@@ -84,6 +84,14 @@ def remove_edges(orig_edge_index, edge_index):
 
     # Use a unique representation of each edge for easy comparison
     # Convert each pair to a large number (assuming max node index is reasonably small)
+
+    if orig_edge_index.numel() == 0:
+        print(orig_edge_index)
+        raise ValueError("orig_edge_index is empty.")
+    if edge_index.numel() == 0:
+        print(edge_index)
+        raise ValueError("edge_index is empty.")
+
     max_node = max(orig_edge_index.max(), edge_index.max()) + 1
     orig_edges_flat = orig_edges[:, 0] * max_node + orig_edges[:, 1]
     remove_edges_flat = remove_edges[:, 0] * max_node + remove_edges[:, 1]
