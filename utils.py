@@ -17,45 +17,11 @@ from torch_geometric.data import Data
 from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
 from torch_geometric.utils import to_networkx, k_hop_subgraph, to_dense_adj, from_dgl
+from collections import Counter
+
+# cluster-aware sampling
 
 ### edge mapping 
-
-def add_edges_to_edge_index(edge_index, new_edges):
-    """
-    Adds new edges to an existing edge_index tensor.
-
-    Parameters:
-    - edge_index (torch.Tensor): The original edge_index tensor of shape [2, num_edges].
-    - new_edges (torch.Tensor): The new edges to be added, also of shape [2, num_new_edges].
-
-    Returns:
-    - torch.Tensor: Updated edge_index tensor containing the original and new edges.
-    """
-    # Concatenate the original edge_index with the new edges
-    updated_edge_index = torch.cat([edge_index, new_edges], dim=1)
-
-    # Optional: Remove duplicates to clean up the edge list
-    updated_edge_index = remove_duplicates_from_edge_index(updated_edge_index)
-
-    return updated_edge_index
-
-def remove_duplicates_from_edge_index(edge_index):
-    """
-    Remove duplicate edges from edge_index.
-
-    Parameters:
-    - edge_index (torch.Tensor): The edge_index tensor of shape [2, num_edges].
-
-    Returns:
-    - torch.Tensor: Edge_index tensor with duplicates removed.
-    """
-    # Sort edge pairs and then find unique columns
-    sorted_edge_index, _ = torch.sort(edge_index, dim=0)
-    unique_edge_index = torch.unique(sorted_edge_index.t().contiguous(), dim=0)
-
-    return unique_edge_index.t()
-
-
 def assert_edges_exist(orig_edge_index, edge_index):
     # Function to convert [2, num_edges] to a unique identifier for each edge
     def edge_to_unique_id(edge_index):
@@ -110,16 +76,9 @@ def count_duplicate_edges(edge_index):
         max_node = edge_index.max() + 1
         return edge_index[0] * max_node + edge_index[1]
 
-    # Convert edge indices to unique identifiers
     edge_ids = edge_to_unique_id(edge_index)
-
-    # Sort edge identifiers to group duplicates together
     sorted_edge_ids = torch.sort(edge_ids).values
-
-    # Find duplicates: where the shifted values are equal, there is a duplicate
     duplicates = sorted_edge_ids[1:] == sorted_edge_ids[:-1]
-
-    # Count the number of true values, which represent duplicates
     num_duplicates = duplicates.sum().item()
 
     return num_duplicates
@@ -169,7 +128,7 @@ class GADDataset:
         print(pyg_graph)
         return pyg_graph
         
-    def get_local_subgraphs(self, maxNodes, maxN):
+    def get_local_subgraphs(self, maxNodes, maxN, onlyE=False):
         assert hasattr(self, 'trial_id'), "call the split function first"
         anomaly_indices = torch.nonzero(self.pyg_graph.y, as_tuple=False).squeeze().tolist()
         train_indices = torch.nonzero(self.pyg_graph.train_masks[:, self.trial_id], as_tuple=False).squeeze().tolist()  
@@ -180,7 +139,7 @@ class GADDataset:
         # get subgraphs 
         while i < maxN:
             node_idx = random.choice(train_anomaly_indices)
-            subgraph = get_khop_subgraph(self.pyg_graph, node_idx, maxNodes)
+            subgraph = random_walk_subgraph(self.pyg_graph, node_idx, 3, maxNodes, onlyE)
             local_subgraphs.append(subgraph)
             i += 1
         
@@ -192,109 +151,156 @@ class GADDataset:
         return local_subgraphs
         
     
+def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=False):
+    edge_index = to_undirected(pyg_graph.edge_index)
+
+    # Extract a 2-hop subgraph around the start_node
+    hop2_subset, hop2_edge_index, mapping, _ = k_hop_subgraph(start_node, num_hops=2, edge_index=edge_index, relabel_nodes=True)
+    node_mapping = {i: hop2_subset[i].item() for i in range(len(hop2_subset))}
+    if len(hop2_subset) > max_nodes:
+        walks = []
+        while len(set(walks)) < max_nodes:
+            walk = random_walk(pyg_graph, start_node, walk_length)
+            walks.extend(walk)
+            
+        subset = [item[0] for item in Counter(walks).most_common(max_nodes)]
+        subg_edge_index, _ = subgraph(subset, edge_index, relabel_nodes=True)
+        node_mapping = {i: subset[i] for i in range(len(subset))}
+    else:
+        subset = hop2_subset
+        subg_edge_index = hop2_edge_index
+
+    x = pyg_graph.y[subset]
+    x = torch.nn.functional.one_hot(x, num_classes=2).float()
+    edge_attr = torch.tensor([[0, 1] for _ in range(subg_edge_index.shape[1])])
+    extra_x = pyg_graph.x[subset]
+    node_mapping = torch.tensor(list(node_mapping.values()))
+    y = torch.empty(1, 0)
+    # remove self-loops or not 
+    if onlyE:
+        x = torch.ones((len(subset), 1))
+        
+    # Create a new data object for the subgraph
+    d = Data(x=x, edge_index=subg_edge_index, edge_attr = edge_attr, extra_x = extra_x,
+             num_nodes=len(subset), node_mapping=node_mapping, y = y)
+    return d
+
+def random_walk(pyg_graph, start_node, walk_length=3):
+    walk = [start_node]
+    edge_index = pyg_graph.edge_index
+    for _ in range(walk_length):
+        neighbors = edge_index[1][edge_index[0] == walk[-1]]
+        if len(neighbors) == 0:  # If no neighbors, stop the walk
+            break
+        next_node = np.random.choice(neighbors.cpu().numpy())
+        walk.append(next_node)
+    return walk
+
+
+
 
 # cluster aware sampling 
 
-def get_khop_subgraph_v1(pyg_data, node_idx, maxN):
-    # Extract 2-hop subgraph
-    hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
-        node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
+# def get_khop_subgraph_v1(pyg_data, node_idx, maxN):
+#     # Extract 2-hop subgraph
+#     hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
+#         node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
 
-    # Convert the 2-hop subgraph to undirected
-    hop2_edge_index = to_undirected(hop2_edge_index)
+#     # Convert the 2-hop subgraph to undirected
+#     hop2_edge_index = to_undirected(hop2_edge_index)
 
-    # Perform random walk to sample nodes until maxN unique nodes are reached
-    if len(hop2_subset) > maxN:
-        walk_start = hop2_mapping[0].item() # center node
-        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
-        subsample_subset = torch.unique(walks.flatten())
+#     # Perform random walk to sample nodes until maxN unique nodes are reached
+#     if len(hop2_subset) > maxN:
+#         walk_start = hop2_mapping[0].item() # center node
+#         walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
+#         subsample_subset = torch.unique(walks.flatten())
         
-        while len(subsample_subset) < maxN:
-            # keep random walking until we have maxN unique nodes
-            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
-            # concatenate the new walks with the previous walks
-            subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
+#         while len(subsample_subset) < maxN:
+#             # keep random walking until we have maxN unique nodes
+#             walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
+#             # concatenate the new walks with the previous walks
+#             subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
 
-        if len(subsample_subset) > maxN:
-            subsample_subset = subsample_subset[:maxN]
+#         if len(subsample_subset) > maxN:
+#             subsample_subset = subsample_subset[:maxN]
 
-        subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
-    else:
-        subsample_subset = hop2_subset
-        subsample_edge_index = hop2_edge_index
+#         subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
+#     else:
+#         subsample_subset = hop2_subset
+#         subsample_edge_index = hop2_edge_index
 
-    # Create subgraph data object
-    subgraph_data = Data(x=pyg_data.x[subsample_subset], edge_index=subsample_edge_index, y = pyg_data.y[subsample_subset],
-                          num_nodes=len(subsample_subset))
+#     # Create subgraph data object
+#     subgraph_data = Data(x=pyg_data.x[subsample_subset], edge_index=subsample_edge_index, y = pyg_data.y[subsample_subset],
+#                           num_nodes=len(subsample_subset))
 
-    # Set the label for the subgraph based on the original node's label
-    # label = pyg_data.y[node_idx].item()
-    # subgraph_data.y = torch.tensor([label], dtype=torch.long)
-    subgraph_data.center_node_idx = node_idx
+#     # Set the label for the subgraph based on the original node's label
+#     # label = pyg_data.y[node_idx].item()
+#     # subgraph_data.y = torch.tensor([label], dtype=torch.long)
+#     subgraph_data.center_node_idx = node_idx
 
-    return subgraph_data
+#     return subgraph_data
 
 
-def get_khop_subgraph(pyg_data, node_idx, maxN, onlyE=False):
-    # Extract 2-hop subgraph
-    hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
-        node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
+# def get_khop_subgraph(pyg_data, node_idx, maxN, onlyE=False):
+#     # Extract 2-hop subgraph
+#     hop2_subset, hop2_edge_index, hop2_mapping, hop2_edge_mask = k_hop_subgraph(
+#         node_idx, 2, pyg_data.edge_index, relabel_nodes=True, flow='source_to_target')
 
-    # print('hop2_subset: ', len(hop2_subset))
-    hop2_edge_index = to_undirected(hop2_edge_index)
-    relabeled_to_original = {i: hop2_subset[i].item() for i in range(len(hop2_subset))}
-    # print(relabeled_to_original)
-    # print('first relabeled_to_original: ', len(relabeled_to_original))
-    if len(hop2_subset) > maxN:
-        walk_start = hop2_mapping[0].item() # center node
-        walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
-        subsample_subset = torch.unique(walks.flatten())
+#     # print('hop2_subset: ', len(hop2_subset))
+#     hop2_edge_index = to_undirected(hop2_edge_index)
+#     relabeled_to_original = {i: hop2_subset[i].item() for i in range(len(hop2_subset))}
+#     # print(relabeled_to_original)
+#     # print('first relabeled_to_original: ', len(relabeled_to_original))
+#     if len(hop2_subset) > maxN:
+#         walk_start = hop2_mapping[0].item() # center node
+#         walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=5)
+#         subsample_subset = torch.unique(walks.flatten())
         
-        while len(subsample_subset) < maxN:
-            walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=6)
-            subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
+#         while len(subsample_subset) < maxN:
+#             walks = random_walk_until_maxN(hop2_edge_index[0], hop2_edge_index[1], torch.tensor([walk_start]), maxN, walk_length=6)
+#             subsample_subset = torch.unique(torch.cat((subsample_subset, torch.unique(walks.flatten()))))
 
-        if len(subsample_subset) > maxN:
-            subsample_subset = subsample_subset[:maxN]
-        # update relabeled_to_original by removing nodes not in subsample_subset
-        # print('subsample_subset: ', len(subsample_subset))
-        relabeled_to_original = {k: v for k, v in relabeled_to_original.items() if k in subsample_subset}
+#         if len(subsample_subset) > maxN:
+#             subsample_subset = subsample_subset[:maxN]
+#         # update relabeled_to_original by removing nodes not in subsample_subset
+#         # print('subsample_subset: ', len(subsample_subset))
+#         relabeled_to_original = {k: v for k, v in relabeled_to_original.items() if k in subsample_subset}
         
-        # print('second relabeled_to_original: ', len(relabeled_to_original))
-        # print(relabeled_to_original)
-        # reindex keys in relabeled_to_original from 0 to len(relabeled_to_original)
+#         # print('second relabeled_to_original: ', len(relabeled_to_original))
+#         # print(relabeled_to_original)
+#         # reindex keys in relabeled_to_original from 0 to len(relabeled_to_original)
         
-        relabeled_to_original = {i: relabeled_to_original[k] for i, k in enumerate(sorted(relabeled_to_original.keys()))}
+#         relabeled_to_original = {i: relabeled_to_original[k] for i, k in enumerate(sorted(relabeled_to_original.keys()))}
         
-        # print('third relabeled_to_original: ', relabeled_to_original)        
+#         # print('third relabeled_to_original: ', relabeled_to_original)        
 
-        subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
-    else:
-        subsample_subset = hop2_subset
-        subsample_edge_index = hop2_edge_index
+#         subsample_edge_index, subsample_edge_mask = subgraph(subsample_subset, hop2_edge_index, relabel_nodes=True)
+#     else:
+#         subsample_subset = hop2_subset
+#         subsample_edge_index = hop2_edge_index
     
-    # dict is not iterable by pytorch dataloader, convert relabeled_to_original to tensor
-    relabeled_to_original = torch.tensor(list(relabeled_to_original.values()))
+#     # dict is not iterable by pytorch dataloader, convert relabeled_to_original to tensor
+#     relabeled_to_original = torch.tensor(list(relabeled_to_original.values()))
 
-    x = pyg_data.y[subsample_subset]
-    # convert x to one-hot encoding
-    x = torch.nn.functional.one_hot(x, num_classes=2).float()
-    edge_index = subsample_edge_index
-    edge_attr = torch.tensor([[0, 1] for _ in range(subsample_edge_index.shape[1])])
-    extra_x = pyg_data.x[subsample_subset]
-    edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
-    y = y = torch.empty(1, 0)
+#     x = pyg_data.y[subsample_subset]
+#     # convert x to one-hot encoding
+#     x = torch.nn.functional.one_hot(x, num_classes=2).float()
+#     edge_index = subsample_edge_index
+#     edge_attr = torch.tensor([[0, 1] for _ in range(subsample_edge_index.shape[1])])
+#     extra_x = pyg_data.x[subsample_subset]
+#     edge_index, edge_attr = remove_self_loops(edge_index, edge_attr)
+#     y = torch.empty(1, 0)
 
-    if onlyE:
-        print('onlyE')
-        x = torch.ones((len(subsample_subset), 1))
+#     if onlyE:
+#         print('onlyE')
+#         x = torch.ones((len(subsample_subset), 1))
         
-    subgraph_data = Data(x=x, edge_index=edge_index, edge_attr = edge_attr, extra_x = extra_x,
-                          num_nodes=len(subsample_subset), node_mapping = relabeled_to_original, y=y)
+#     subgraph_data = Data(x=x, edge_index=edge_index, edge_attr = edge_attr, extra_x = extra_x,
+#                           num_nodes=len(subsample_subset), node_mapping = relabeled_to_original, y=y)
 
-    subgraph_data.center_node_idx = node_idx
+#     subgraph_data.center_node_idx = node_idx
 
-    return subgraph_data
+#     return subgraph_data
 
 
 def random_walk_until_maxN(

@@ -339,7 +339,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         # print(111, X.shape, E.shape)
         self.print("Applying noise...")
         noisy_data = self.apply_noise(X, E, data.y, node_mask, augment=True)
-        self.print(noisy_data['E_t'].shape, noisy_data['X_t'].shape, noisy_data['y_t'].shape)
+        # self.print(noisy_data['E_t'].shape, noisy_data['X_t'].shape, noisy_data['y_t'].shape)
         self.print("Predicting...")
         
         X, E, y = noisy_data['X_t'], noisy_data['E_t'], noisy_data['y_t']

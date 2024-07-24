@@ -113,7 +113,7 @@ hydra:
     - hydra.mode=RUN
     task: []
   job:
-    name: benchmark_new
+    name: augment
     chdir: true
     override_dirname: ''
     id: ???
@@ -128,7 +128,7 @@ hydra:
         exclude_keys: []
   runtime:
     version: 1.3.2
-    version_base: '1.1'
+    version_base: '1.3'
     cwd: /home/allenwang/gad_diff/GAD_Diff
     config_sources:
     - path: hydra.conf

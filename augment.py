@@ -80,7 +80,7 @@ def main(cfg: DictConfig):
                       accumulate_grad_batches=cfg.train.accumulate_grad_batches)
 
     # get the augmented data (edge_index)
-    trainer.predict(model, aug_loader, ckpt_path = 'checkpoints/reddit/reddit_onehot.ckpt')
+    trainer.predict(model, aug_loader, ckpt_path = 'checkpoints/reddit/onehot.ckpt')
     augment_samples = model.get_augment_samples()
     
     
@@ -93,36 +93,35 @@ def main(cfg: DictConfig):
     #     augment_sample = augment_samples[i]
     #     print('augment_sample', augment_sample.x.shape)
     
-    
     # mapping the augmented data to the original data
     for i, batch in enumerate(aug_loader):
         print(i, batch)
-        print(batch.edge_index.shape)
+        print(batch.edge_index.shape)  # edge_index is empty 
 
-        edge_index = batch.edge_index
-        node_mapping = batch.node_mapping
-        remapped_edge_index = node_mapping[edge_index]
+        # edge_index = batch.edge_index
+        # node_mapping = batch.node_mapping
+        # remapped_edge_index = node_mapping[edge_index]
 
-        # remove the original subgraph topology
-        # assert_edges_exist(orig_edge_index, remapped_edge_index)
-        temp_edge_index = remove_edges(temp_edge_index, remapped_edge_index)
-        print(count_duplicate_edges(remapped_edge_index))
+        # # remove the original subgraph topology
+        # # assert_edges_exist(orig_edge_index, remapped_edge_index)
+        # temp_edge_index = remove_edges(temp_edge_index, remapped_edge_index) 
+        # print(count_duplicate_edges(remapped_edge_index))
 
-        print('originally',orig_edge_index.shape)
-        print('remove to', temp_edge_index.shape)
-        print(remapped_edge_index.shape)
+        # print('originally',orig_edge_index.shape)
+        # print('remove to', temp_edge_index.shape)
+        # print(remapped_edge_index.shape)
 
-        augmented_data = augment_samples[i]  # a list of pyg data objects
-        print(augmented_data.edge_index.shape, edge_index.shape)
-        augmented_edge_index = augmented_data.edge_index
-        remapped_augmented_edge_index = node_mapping[augmented_edge_index]
-        print('augment',remapped_augmented_edge_index.shape)
+        # augmented_data = augment_samples[i]  # a list of pyg data objects
+        # print(augmented_data.edge_index.shape, edge_index.shape)
+        # augmented_edge_index = augmented_data.edge_index
+        # remapped_augmented_edge_index = node_mapping[augmented_edge_index]
+        # print('augment',remapped_augmented_edge_index.shape)
         
-        # concatenate the removed_edge_index and the remapped_augmented_edge_index
-        temp_edge_index = torch.cat((temp_edge_index, remapped_augmented_edge_index), dim=1)
-        temp_edge_index = coalesce(temp_edge_index)
-        print('final', temp_edge_index.shape)
-        print(temp_edge_index)
+        # # concatenate the removed_edge_index and the remapped_augmented_edge_index
+        # temp_edge_index = torch.cat((temp_edge_index, remapped_augmented_edge_index), dim=1)
+        # temp_edge_index = coalesce(temp_edge_index)
+        # print('final', temp_edge_index.shape)
+        # print(temp_edge_index)
         
 
 def augmentation(cfg, original_data, dataset_name, subgraph_loader):
@@ -139,7 +138,6 @@ def augmentation(cfg, original_data, dataset_name, subgraph_loader):
 
     sampling_metrics = CrossDomainSamplingMetrics(subgraph_loader)
     model = DiscreteDenoisingDiffusion(cfg, input_dims, output_dims, nodes_dist, node_types, edge_types, extra_features, domain_features, subgraph_loader, sampling_metrics, augment=True) 
-
 
     use_gpu = 1>0 and torch.cuda.is_available() # multiple gpus
     trainer = Trainer(gradient_clip_val=cfg.train.clip_grad,
