@@ -127,14 +127,14 @@ def main(cfg: DictConfig):
 def augmentation(cfg, original_data, dataset_name, subgraph_loader):
 
     orig_edge_index = original_data.edge_index 
-    print(original_data)
+    # print(original_data)
 
     num_classes, max_n_nodes, nodes_dist, edge_types, node_types, n_nodes = init_dataset(dataset_name, subgraph_loader)
 
     extra_features = ExtraFeatures(cfg.model.extra_features, max_n_nodes)
     domain_features = DummyExtraFeatures()   
     input_dims, output_dims = compute_input_output_dims(subgraph_loader, extra_features, domain_features)
-    print(input_dims, output_dims)
+    # print(input_dims, output_dims)
 
     sampling_metrics = CrossDomainSamplingMetrics(subgraph_loader)
     model = DiscreteDenoisingDiffusion(cfg, input_dims, output_dims, nodes_dist, node_types, edge_types, extra_features, domain_features, subgraph_loader, sampling_metrics, augment=True) 

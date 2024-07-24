@@ -18,7 +18,7 @@ from torch_geometric.transforms import BaseTransform
 from torch_geometric.utils import to_torch_csc_tensor
 from torch_geometric.utils import to_networkx, k_hop_subgraph, to_dense_adj, from_dgl
 from collections import Counter
-
+import netlsd
 # cluster-aware sampling
 
 ### edge mapping 
@@ -93,6 +93,7 @@ class GADDataset:
         self.graph = graph
         # self.khop_subgraph = []
         self.pyg_graph = self.get_pyg_graph()
+        self.clusters = self.cluster_anomalous_nodes()
 
     def split(self, semi_supervised=True, trial_id=0):
         
@@ -128,7 +129,7 @@ class GADDataset:
         print(pyg_graph)
         return pyg_graph
         
-    def get_local_subgraphs(self, maxNodes, maxN, onlyE=False):
+    def get_local_subgraphs(self, maxNodes, maxN, onlyE=True):
         assert hasattr(self, 'trial_id'), "call the split function first"
         anomaly_indices = torch.nonzero(self.pyg_graph.y, as_tuple=False).squeeze().tolist()
         train_indices = torch.nonzero(self.pyg_graph.train_masks[:, self.trial_id], as_tuple=False).squeeze().tolist()  
@@ -136,9 +137,9 @@ class GADDataset:
         
         i = 0
         local_subgraphs = []
-        # get subgraphs 
+        # get subgraphs: implementing cluster-aware sampling 
         while i < maxN:
-            node_idx = random.choice(train_anomaly_indices)
+            node_idx = random.choice(train_anomaly_indices) # cluster-aware sampling 
             subgraph = random_walk_subgraph(self.pyg_graph, node_idx, 3, maxNodes, onlyE)
             local_subgraphs.append(subgraph)
             i += 1
@@ -149,7 +150,38 @@ class GADDataset:
         print(f'saved {maxN} local {maxNodes}-subgraphs for {self.name}')    
         
         return local_subgraphs
-        
+
+    def cluster_anomalous_nodes(self, k=10):
+        from sklearn.cluster import KMeans
+        anomaly_indices = torch.nonzero(self.pyg_graph.y, as_tuple=False).squeeze().tolist()
+        train_indices = torch.nonzero(self.pyg_graph.train_masks[:, self.trial_id], as_tuple=False).squeeze().tolist()
+        train_anomaly_indices = list(set(anomaly_indices).intersection(set(train_indices)))
+
+        # get 2-hop subgraph around each anomalous node
+        hop2_subgraphs = []
+        for node_idx in train_anomaly_indices:
+            subgraph = k_hop_subgraph(self.pyg_graph, node_idx, 2)
+            hop2_subgraphs.append(subgraph)
+
+        subgraph_embeddings = [get_graph_embedding(subgraph) for subgraph in hop2_subgraphs]
+        subgraph_embeddings = np.array(subgraph_embeddings)
+
+        kmeans = KMeans(n_clusters=k)
+        labels = kmeans.fit_predict(subgraph_embeddings)
+
+        # create a dict to map each anomalous node to its cluster, e.g. {cluster_id: [node1, node2, ...]}
+        cluster_dict = {}
+        for i, label in enumerate(labels):
+            if label not in cluster_dict:
+                cluster_dict[label] = []
+            cluster_dict[label].append(train_anomaly_indices[i])
+
+        return cluster_dict
+
+def get_graph_embedding(d):
+    nx_g = to_networkx(d, to_undirected=True)
+    emb = netlsd.heat(nx_g, timescales=np.logspace(-2, 2, 50))  # what is the shape of emb?
+    return emb
     
 def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=False):
     edge_index = to_undirected(pyg_graph.edge_index)
@@ -303,73 +335,73 @@ def random_walk(pyg_graph, start_node, walk_length=3):
 #     return subgraph_data
 
 
-def random_walk_until_maxN(
-    row: Tensor,
-    col: Tensor,
-    start: Tensor,
-    maxN: int,
-    walk_length: int,
-    p: float = 1,
-    q: float = 1,
-    coalesced: bool = True,
-    num_nodes: Optional[int] = None,
-    return_edge_indices: bool = False,
-) -> Union[Tensor, Tuple[Tensor, Tensor]]:
-    """Samples random walks until the number of unique nodes reaches `maxN`.
-    Args:
-        row (LongTensor): Source nodes.
-        col (LongTensor): Target nodes.
-        start (LongTensor): Nodes from where random walks start.
-        maxN (int): The number of unique nodes to reach.
-        walk_length (int): The walk length.
-        p (float, optional): Likelihood of immediately revisiting a node in the
-            walk. (default: :obj:`1`)
-        q (float, optional): Control parameter to interpolate between
-            breadth-first strategy and depth-first strategy (default: :obj:`1`)
-        coalesced (bool, optional): If set to :obj:`True`, will coalesce/sort
-            the graph given by :obj:`(row, col)` according to :obj:`row`.
-            (default: :obj:`True`)
-        num_nodes (int, optional): The number of nodes. (default: :obj:`None`)
-        return_edge_indices (bool, optional): Whether to additionally return
-            the indices of edges traversed during the random walk.
-            (default: :obj:`False`)
+# def random_walk_until_maxN(
+#     row: Tensor,
+#     col: Tensor,
+#     start: Tensor,
+#     maxN: int,
+#     walk_length: int,
+#     p: float = 1,
+#     q: float = 1,
+#     coalesced: bool = True,
+#     num_nodes: Optional[int] = None,
+#     return_edge_indices: bool = False,
+# ) -> Union[Tensor, Tuple[Tensor, Tensor]]:
+#     """Samples random walks until the number of unique nodes reaches `maxN`.
+#     Args:
+#         row (LongTensor): Source nodes.
+#         col (LongTensor): Target nodes.
+#         start (LongTensor): Nodes from where random walks start.
+#         maxN (int): The number of unique nodes to reach.
+#         walk_length (int): The walk length.
+#         p (float, optional): Likelihood of immediately revisiting a node in the
+#             walk. (default: :obj:`1`)
+#         q (float, optional): Control parameter to interpolate between
+#             breadth-first strategy and depth-first strategy (default: :obj:`1`)
+#         coalesced (bool, optional): If set to :obj:`True`, will coalesce/sort
+#             the graph given by :obj:`(row, col)` according to :obj:`row`.
+#             (default: :obj:`True`)
+#         num_nodes (int, optional): The number of nodes. (default: :obj:`None`)
+#         return_edge_indices (bool, optional): Whether to additionally return
+#             the indices of edges traversed during the random walk.
+#             (default: :obj:`False`)
 
-    :rtype: :class:`LongTensor`
-    """
-    if num_nodes is None:
-        num_nodes = max(int(row.max()), int(col.max()), int(start.max())) + 1
+#     :rtype: :class:`LongTensor`
+#     """
+#     if num_nodes is None:
+#         num_nodes = max(int(row.max()), int(col.max()), int(start.max())) + 1
 
-    if coalesced:
-        perm = torch.argsort(row * num_nodes + col)
-        row, col = row[perm], col[perm]
+#     if coalesced:
+#         perm = torch.argsort(row * num_nodes + col)
+#         row, col = row[perm], col[perm]
 
-    deg = row.new_zeros(num_nodes)
-    deg.scatter_add_(0, row, torch.ones_like(row))
-    rowptr = row.new_zeros(num_nodes + 1)
-    torch.cumsum(deg, 0, out=rowptr[1:])
+#     deg = row.new_zeros(num_nodes)
+#     deg.scatter_add_(0, row, torch.ones_like(row))
+#     rowptr = row.new_zeros(num_nodes + 1)
+#     torch.cumsum(deg, 0, out=rowptr[1:])
 
-    all_nodes = []
-    all_edges = []
-    unique_nodes = set()
+#     all_nodes = []
+#     all_edges = []
+#     unique_nodes = set()
 
-    while len(unique_nodes) < maxN:
-        node_seq, edge_seq = torch.ops.torch_cluster.random_walk(
-            rowptr, col, start, walk_length, p, q)
+#     while len(unique_nodes) < maxN:
+#         node_seq, edge_seq = torch.ops.torch_cluster.random_walk(
+#             rowptr, col, start, walk_length, p, q)
         
-        all_nodes.append(node_seq)
-        all_edges.append(edge_seq)
+#         all_nodes.append(node_seq)
+#         all_edges.append(edge_seq)
         
-        unique_nodes.update(node_seq.view(-1).tolist())
+#         unique_nodes.update(node_seq.view(-1).tolist())
         
-        if len(unique_nodes) >= maxN:
-            break
+#         if len(unique_nodes) >= maxN:
+#             break
 
-    all_nodes = torch.cat(all_nodes, dim=1)
-    if return_edge_indices:
-        all_edges = torch.cat(all_edges, dim=1)
-        return all_nodes, all_edges
+#     all_nodes = torch.cat(all_nodes, dim=1)
+#     if return_edge_indices:
+#         all_edges = torch.cat(all_edges, dim=1)
+#         return all_nodes, all_edges
 
-    return all_nodes
+#     return all_nodes
 
 
 ### GADBENCH CODE

@@ -35,6 +35,7 @@ class BaseDetector(object):
         if train_config['inductive'] == False:
             self.train_graph = graph
             self.val_graph = graph
+            self.temp_graph = graph
         else:
             self.train_graph = graph.subgraph(self.train_mask)
             self.val_graph = graph.subgraph(self.train_mask+self.val_mask)
@@ -105,29 +106,40 @@ class BaseGNNDetector(BaseDetector):
                     break
         return test_score
     
+    # to do:
+    # 1. get augmentation edge_index and update temp graph
+    # 2. train with temp graph 
     def train_with_augment(self):
+        print(self.temp_graph)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'])
         train_labels, val_labels, test_labels = self.labels[self.train_mask], self.labels[self.val_mask], self.labels[self.test_mask]
+        temp_graph = self.source_graph
         for e in range(self.train_config['epochs']):
+            print('Epoch', e)
+            if e >= self.train_config['start_aug_epoch'] and e % self.train_config['aug_interval'] == 0:
+                sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
+                augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
+                augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)
+                print('augment_edge_index', augment_edge_index.shape, 'original edge_index', self.source_pyg_graph.edge_index.shape)
+
+                num_nodes = self.source_graph.number_of_nodes()
+                num_edges = self.source_graph.number_of_edges()
+                src, dst = augment_edge_index
+
+                print('create new temp graph')
+                temp_graph = dgl.graph((src, dst), num_nodes=num_nodes).to(self.train_config['device'])
+                for key in self.source_graph.ndata.keys():
+                    temp_graph.ndata[key] = self.source_graph.ndata[key]
+
+
             self.model.train()
-            logits = self.model(self.train_graph)
-            loss = F.cross_entropy(logits[self.train_graph.ndata['train_mask']], train_labels,
+            logits = self.model(temp_graph)  #
+            loss = F.cross_entropy(logits[temp_graph.ndata['train_mask']], train_labels,
                                    weight=torch.tensor([1., self.weight], device=self.labels.device))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-            if e >= self.train_config['start_aug_epoch'] and e % self.train_config['aug_interval'] == 0:
-                sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
-                augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
-                augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)
-
-                num_nodes = self.source_graph.number_of_nodes()
-                num_edges = self.source_graph.number_of_edges()
-                src, dst = augment_edge_index
-                self.temp_graph = dgl.graph((src, dst), num_nodes=num_nodes).to(self.train_config['device'])
-                for key in self.source_graph.ndata.keys():
-                    self.temp_graph.ndata[key] = self.source_graph.ndata[key]
 
             if self.model_config['drop_rate'] > 0 or self.train_config['inductive']:
                 self.model.eval()

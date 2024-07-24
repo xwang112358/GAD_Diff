@@ -18,7 +18,7 @@ general:
   num_train: -1
 model:
   type: discrete
-  transition: uniform
+  transition: marginal
   model: graph_tf
   diffusion_steps: 500
   diffusion_noise_schedule: cosine
@@ -63,7 +63,7 @@ gad:
     drop_rate: 0
   train_config:
     device: cuda
-    start_aug_epoch: 50
+    start_aug_epoch: 10
     aug_interval: 10
     epochs: 200
     patience: 100
@@ -71,11 +71,11 @@ gad:
     inductive: false
   trials: 1
   semi_supervised: 0
-  models: GCN
+  models: GIN
   datasets: '0'
   inductive: false
 augment:
   maxNode: 150
   NumSubgraphs: 10
   diffusion_steps: 5
-  lggm_variant: onehot
+  lggm_variant: adj

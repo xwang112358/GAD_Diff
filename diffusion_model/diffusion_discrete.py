@@ -323,7 +323,7 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
 
 
     def predict_step(self, data, i, D=10):
-        print('start predict step')
+        # print('start predict step')
         if data.edge_index.numel() == 0:
             self.print("Found a batch with no edges. Skipping.")
             return
@@ -333,14 +333,14 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
         
         # create a list of sum of node mask in dim 0
         n_nodes = node_mask.sum(1)
-        print('n_nodes',n_nodes)
+        # print('n_nodes',n_nodes)
         
         X, E = dense_data.X, dense_data.E
         # print(111, X.shape, E.shape)
-        self.print("Applying noise...")
+        # self.print("Applying noise...")
         noisy_data = self.apply_noise(X, E, data.y, node_mask, augment=True)
         # self.print(noisy_data['E_t'].shape, noisy_data['X_t'].shape, noisy_data['y_t'].shape)
-        self.print("Predicting...")
+        # self.print("Predicting...")
         
         X, E, y = noisy_data['X_t'], noisy_data['E_t'], noisy_data['y_t']
         # print(222, X.shape, E.shape)
@@ -364,22 +364,23 @@ class DiscreteDenoisingDiffusion(pl.LightningModule):
             
         sampled_s = sampled_s.mask(node_mask, collapse=True)
         X, E, y = sampled_s.X, sampled_s.E, sampled_s.y
-        print(333, X.shape, E.shape)
+        # print(333, X.shape, E.shape)
 
         augmented_list = []
         
         for i in range(X.shape[0]):
             from torch_geometric.data import Data
             n = n_nodes[i]
-            print(666, n)
+            # print(666, n)
             X_i = X[i, :n].cpu()   # n
             E_i = E[i, :n, :n].cpu() # 1 * n * n * de
-            print(444, X_i.shape, E_i.shape)
+            # print(444, X_i.shape, E_i.shape)
             # convert X and E to a pyg data object
             
             # convert X_i to one-hot encoding
+            # to do: check one-hot encoding or not
             x = F.one_hot(X_i, num_classes=self.Xdim_output).float()
-            print(555, x.shape)
+            # print(555, x.shape)
 
             edge_index = utils.adj_to_edge_index(E_i)
             pyg_data = Data(x=x, edge_index=edge_index)

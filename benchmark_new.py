@@ -111,7 +111,8 @@ def main(cfg):
                 print(detector.model)
 
                 # finish training and testing
-                test_score = detector.train_with_augment()
+                # test_score = detector.train_with_augment()
+                test_score = detector.train()
 
 
                 auc_list.append(test_score['AUROC'])
