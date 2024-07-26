@@ -9,3 +9,4 @@ checkpoints
 *.pt
 lightning_logs
 results
+wandb

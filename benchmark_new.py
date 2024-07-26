@@ -10,6 +10,7 @@ import warnings
 from torch_geometric.loader import DataLoader
 import hydra
 from augment import augmentation
+import wandb
 
 warnings.filterwarnings("ignore")
 seed_list = list(range(3407, 10000, 10))
@@ -29,6 +30,7 @@ def set_seed(seed=3407):
 def main(cfg):
     print(cfg.gad)
     args = cfg.gad
+    setup_wandb(cfg)
 
     columns = ['name']
     datasets = ['reddit', 'weibo', 'amazon', 'yelp', 'tfinance',
@@ -63,13 +65,23 @@ def main(cfg):
             time_cost = 0
             train_config = {
                 'device': 'cuda',
-                'start_aug_epoch': 50,
-                'aug_interval': 10,
+                # 'start_aug_epoch': 50,
+                # 'aug_interval': 10,
                 'epochs': 200,
                 'patience': 100,
                 'metric': 'AUPRC',
                 'inductive': args.inductive
             }
+            
+            aug_config = {
+                'start_aug_epoch': cfg.augment.start_aug_epoch,
+                'aug_interval': cfg.augment.aug_interval,
+                'NumSubgraph': cfg.augment.NumSubgraphs,
+                'maxNode': cfg.augment.maxNode,
+                'diffusion_steps': cfg.augment.diffusion_steps,
+                'lggm_variant': cfg.augment.lggm_variant,
+            }
+            
             # train_config = args.train_config
             # load the initial dataset
             data = GADDataset(dataset_name)
@@ -111,7 +123,7 @@ def main(cfg):
                 print(detector.model)
 
                 # finish training and testing
-                # test_score = detector.train_with_augment()
+                test_score = detector.train_with_augment()
                 test_score = detector.train()
 
 
@@ -129,6 +141,16 @@ def main(cfg):
             model_result[dataset_name + '-RecK mean'] = np.mean(rec_list)
             model_result[dataset_name + '-RecK std'] = np.std(rec_list)
             model_result[dataset_name + '-Time'] = time_cost / args.trials
+            if wandb.run:
+                wandb.log({f'{dataset_name}_{model}_AUROC mean': np.mean(auc_list),
+                           f'{dataset_name}_{model}_AUROC std': np.std(auc_list),
+                           f'{dataset_name}_{model}_AUPRC mean': np.mean(pre_list),
+                           f'{dataset_name}_{model}_AUPRC std': np.std(pre_list),
+                           f'{dataset_name}_{model}_RecK mean': np.mean(rec_list),
+                           f'{dataset_name}_{model}_RecK std': np.std(rec_list),
+                           f'{dataset_name}_{model}_Time': time_cost / args.trials})
+                
+            
         model_result = pandas.DataFrame(model_result, index=[0])
         results = pandas.concat([results, model_result])
         file_id = save_results(results, file_id)

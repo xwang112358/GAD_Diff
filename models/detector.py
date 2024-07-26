@@ -116,7 +116,7 @@ class BaseGNNDetector(BaseDetector):
         temp_graph = self.source_graph
         for e in range(self.train_config['epochs']):
             print('Epoch', e)
-            if e >= self.train_config['start_aug_epoch'] and e % self.train_config['aug_interval'] == 0:
+            if e >= self.cfg.augment.start_aug_epoch and e % self.cfg.augment.aug_interval == 0:
                 sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
                 augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
                 augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)

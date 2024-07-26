@@ -19,6 +19,7 @@ from torch_geometric.utils import to_torch_csc_tensor
 from torch_geometric.utils import to_networkx, k_hop_subgraph, to_dense_adj, from_dgl
 from collections import Counter
 import netlsd
+from tqdm import tqdm
 # cluster-aware sampling
 
 ### edge mapping 
@@ -93,7 +94,7 @@ class GADDataset:
         self.graph = graph
         # self.khop_subgraph = []
         self.pyg_graph = self.get_pyg_graph()
-        self.clusters = self.cluster_anomalous_nodes()
+        # self.clusters = self.cluster_anomalous_nodes()
 
     def split(self, semi_supervised=True, trial_id=0):
         
@@ -159,14 +160,17 @@ class GADDataset:
 
         # get 2-hop subgraph around each anomalous node
         hop2_subgraphs = []
-        for node_idx in train_anomaly_indices:
-            subgraph = k_hop_subgraph(self.pyg_graph, node_idx, 2)
+        for node_idx in tqdm(train_anomaly_indices):
+            hop2_subset, hop2_edge_index, mapping, _ = k_hop_subgraph(node_idx, 2, self.pyg_graph.edge_index, relabel_nodes=True)
+            subgraph = Data(x=self.pyg_graph.x[hop2_subset], edge_index=hop2_edge_index, y=self.pyg_graph.y[hop2_subset], num_nodes=len(hop2_subset))
             hop2_subgraphs.append(subgraph)
 
-        subgraph_embeddings = [get_graph_embedding(subgraph) for subgraph in hop2_subgraphs]
+        print('getting subgraph embeddings')
+        subgraph_embeddings = [get_graph_embedding(subgraph) for subgraph in tqdm(hop2_subgraphs)]
         subgraph_embeddings = np.array(subgraph_embeddings)
 
         kmeans = KMeans(n_clusters=k)
+        print('fitting kmeans')
         labels = kmeans.fit_predict(subgraph_embeddings)
 
         # create a dict to map each anomalous node to its cluster, e.g. {cluster_id: [node1, node2, ...]}
@@ -216,6 +220,8 @@ def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=Fa
     d = Data(x=x, edge_index=subg_edge_index, edge_attr = edge_attr, extra_x = extra_x,
              num_nodes=len(subset), node_mapping=node_mapping, y = y)
     return d
+    
+    
 
 def random_walk(pyg_graph, start_node, walk_length=3):
     walk = [start_node]
@@ -411,7 +417,18 @@ from models.detector import *
 from dgl.data.utils import load_graphs
 import os
 import json
+import wandb
+import omegaconf
 
+def setup_wandb(cfg):
+    gad_train_config = cfg.gad.train_config
+    config_dict = omegaconf.OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
+    kwargs = {'name': f'reddit_local_augmentation', 
+              'project': f'GADBench_EXP_v1', 
+              'config': config_dict,
+              'settings': wandb.Settings(_disable_stats=True), 'reinit': True, 'mode': cfg.general.wandb}
+    wandb.init(**kwargs)
+    wandb.save('*.txt')
 
 class Dataset:
     def __init__(self, name='tfinance', prefix='datasets/'):
@@ -495,7 +512,7 @@ def save_results(results, file_id):
         while os.path.exists('results/{}.xlsx'.format(file_id)):
             file_id += 1
 
-    results.transpose().to_excel('results/{}.xlsx'.format(file_id))
+    results.transpose().to_excel('results/{}.xlsx'.format(file_id), float_format="%.6f")
     print('save to file ID: {}'.format(file_id))
     return file_id
 

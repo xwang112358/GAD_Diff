@@ -63,19 +63,19 @@ gad:
     drop_rate: 0
   train_config:
     device: cuda
-    start_aug_epoch: 10
-    aug_interval: 10
     epochs: 200
-    patience: 100
+    patience: 200
     metric: AUPRC
     inductive: false
   trials: 1
   semi_supervised: 0
-  models: GIN
+  models: GIN-GCN-GAT-GraphSAGE-PNA
   datasets: '0'
   inductive: false
 augment:
   maxNode: 150
-  NumSubgraphs: 10
-  diffusion_steps: 5
+  start_aug_epoch: 5
+  aug_interval: 5
+  NumSubgraphs: 15
+  diffusion_steps: 10
   lggm_variant: adj
