@@ -13,7 +13,6 @@ import itertools
 import psutil, os
 from catboost import Pool, CatBoostClassifier, CatBoostRegressor, sum_models
 from torch_geometric.loader import DataLoader
-from augment import augmentation
 
 
 class BaseDetector(object):
@@ -31,6 +30,7 @@ class BaseDetector(object):
         self.weight = (1 - self.labels[self.train_mask]).sum().item() / self.labels[self.train_mask].sum().item()
         self.source_graph = graph
         self.source_pyg_graph = self.data.pyg_graph
+        self.device = self.train_config['device']
         print(train_config['inductive'])
         if train_config['inductive'] == False:
             self.train_graph = graph
@@ -96,6 +96,7 @@ class BaseGNNDetector(BaseDetector):
                 self.patience_knt = 0
                 self.best_score = val_score[self.train_config['metric']]
                 test_score = self.eval(test_labels, probs[self.test_mask])
+                
                 print('Epoch {}, Loss {:.4f}, Val AUC {:.4f}, PRC {:.4f}, RecK {:.4f}, test AUC {:.4f}, PRC {:.4f}, RecK {:.4f}'.format(
                     e, loss, val_score['AUROC'], val_score['AUPRC'], val_score['RecK'],
                     test_score['AUROC'], test_score['AUPRC'], test_score['RecK']))
@@ -104,64 +105,78 @@ class BaseGNNDetector(BaseDetector):
                 if self.patience_knt > self.train_config['patience']:
                     print('Early stopping at epoch {}'.format(e))
                     break
+                
         return test_score
     
-    # to do:
-    # 1. get augmentation edge_index and update temp graph
-    # 2. train with temp graph 
     def train_with_augment(self):
-        print(self.temp_graph)
+        from augment import augmentation
+        # print(self.temp_graph)
         optimizer = torch.optim.Adam(self.model.parameters(), lr=self.model_config['lr'])
         train_labels, val_labels, test_labels = self.labels[self.train_mask], self.labels[self.val_mask], self.labels[self.test_mask]
         temp_graph = self.source_graph
         for e in range(self.train_config['epochs']):
-            print('Epoch', e)
+            # print('Epoch', e)
             if e >= self.cfg.augment.start_aug_epoch and e % self.cfg.augment.aug_interval == 0:
+                temp_graph = self.source_graph
                 sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
-                augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
-                augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)
-                print('augment_edge_index', augment_edge_index.shape, 'original edge_index', self.source_pyg_graph.edge_index.shape)
+                augment_subgraphs = augmentation(self.cfg, self.source_pyg_graph, self.data.name, sampled_subgraphs)
+                for subgraph in augment_subgraphs:
+                    new_x = subgraph.x.to(self.device)
+                    new_edges = subgraph.edge_index.to(self.device)
+                    new_labels = subgraph.label.to(self.device)
+                    num_existing_nodes = temp_graph.num_nodes()
+                    new_edges = new_edges + num_existing_nodes
+                    new_train_mask = torch.cat([torch.tensor([1], dtype=torch.uint8), torch.tensor([0]*(subgraph.x.size(0)-1), dtype=torch.uint8)]).to(self.device)
+                    new_val_mask = torch.tensor([0]*subgraph.x.size(0), dtype=torch.uint8).to(self.device)
+                    new_test_mask = torch.tensor([0]*subgraph.x.size(0), dtype=torch.uint8).to(self.device)
 
-                num_nodes = self.source_graph.number_of_nodes()
-                num_edges = self.source_graph.number_of_edges()
-                src, dst = augment_edge_index
+                    temp_graph.add_nodes(new_x.size(0), {'feature': new_x, 'label': new_labels, 'train_mask': new_train_mask, 'val_mask': new_val_mask, 'test_mask': new_test_mask})
+                    temp_graph.add_edges(new_edges[0], new_edges[1])
 
-                print('create new temp graph')
-                temp_graph = dgl.graph((src, dst), num_nodes=num_nodes).to(self.train_config['device'])
-                for key in self.source_graph.ndata.keys():
-                    temp_graph.ndata[key] = self.source_graph.ndata[key]
+                train_labels = temp_graph.ndata['label'][temp_graph.ndata['train_mask']]
+                val_labels = temp_graph.ndata['label'][temp_graph.ndata['val_mask']]
+                test_labels = temp_graph.ndata['label'][temp_graph.ndata['test_mask']]
 
 
             self.model.train()
             logits = self.model(temp_graph)  #
             loss = F.cross_entropy(logits[temp_graph.ndata['train_mask']], train_labels,
-                                   weight=torch.tensor([1., self.weight], device=self.labels.device))
+                                   weight=torch.tensor([1., self.weight], device=self.labels.device)) # need to update weight later
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
 
-
-            if self.model_config['drop_rate'] > 0 or self.train_config['inductive']:
-                self.model.eval()
-                logits = self.model(self.val_graph)
             probs = logits.softmax(1)[:, 1]
-            val_score = self.eval(val_labels, probs[self.val_graph.ndata['val_mask']])
+            val_score = self.eval(val_labels, probs[temp_graph.ndata['val_mask']])
             if val_score[self.train_config['metric']] > self.best_score:
-                if self.train_config['inductive']:
-                    logits = self.model(self.source_graph)
-                    probs = logits.softmax(1)[:, 1]
                 self.patience_knt = 0
                 self.best_score = val_score[self.train_config['metric']]
-                test_score = self.eval(test_labels, probs[self.test_mask])
+                test_score = self.eval(test_labels, probs[temp_graph.ndata['test_mask']])
                 print('Epoch {}, Loss {:.4f}, Val AUC {:.4f}, PRC {:.4f}, RecK {:.4f}, test AUC {:.4f}, PRC {:.4f}, RecK {:.4f}'.format(
                     e, loss, val_score['AUROC'], val_score['AUPRC'], val_score['RecK'],
                     test_score['AUROC'], test_score['AUPRC'], test_score['RecK']))
             else:
                 self.patience_knt += 1
-                if self.patience_knt > self.train_config['patience']:
+                if self.patience_knt > self.cfg.gad.train_config.patience:
                     print('Early stopping at epoch {}'.format(e))
                     break
+                
         return test_score
+
+
+# augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
+# augment_edge_index = augmentation(self.cfg, self.source_pyg_graph, self.data.name, augment_loader)
+# print('augment_edge_index', augment_edge_index.shape, 'original edge_index', self.source_pyg_graph.edge_index.shape)
+
+# num_nodes = self.source_graph.number_of_nodes()
+# num_edges = self.source_graph.number_of_edges()
+# src, dst = augment_edge_index
+
+# # print('create new temp graph')
+# temp_graph = dgl.graph((src, dst), num_nodes=num_nodes).to(self.train_config['device'])
+# for key in self.source_graph.ndata.keys():
+#     temp_graph.ndata[key] = self.source_graph.ndata[key]
+
 
 
 # RGCN, HGT

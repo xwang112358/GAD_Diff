@@ -65,28 +65,15 @@ def main(cfg):
             time_cost = 0
             train_config = {
                 'device': 'cuda',
-                # 'start_aug_epoch': 50,
-                # 'aug_interval': 10,
                 'epochs': 200,
                 'patience': 100,
                 'metric': 'AUPRC',
                 'inductive': args.inductive
             }
             
-            aug_config = {
-                'start_aug_epoch': cfg.augment.start_aug_epoch,
-                'aug_interval': cfg.augment.aug_interval,
-                'NumSubgraph': cfg.augment.NumSubgraphs,
-                'maxNode': cfg.augment.maxNode,
-                'diffusion_steps': cfg.augment.diffusion_steps,
-                'lggm_variant': cfg.augment.lggm_variant,
-            }
-            
             # train_config = args.train_config
             # load the initial dataset
             data = GADDataset(dataset_name)
-
-            pyg_graph = data.pyg_graph.clone()
 
             model_config = {'model': model, 'lr': 0.01, 'drop_rate': 0}
 
@@ -103,16 +90,7 @@ def main(cfg):
                 torch.cuda.empty_cache()
                 print("Dataset {}, Model {}, Trial {}".format(dataset_name, model, t))
                 data.split(args.semi_supervised, t)
-                # get the subgraph data for augmentation
-
-
-                # print('sampling subgraphs')
-                # sampled_subgraphs = data.get_local_subgraphs(args.maxNode, args.NumSubgraph)
-                # augment_loader = DataLoader(sampled_subgraphs, batch_size=1, shuffle=False)
-                # get the augmented graph topology for training
-                # augment_edge_index = augmentation(cfg, pyg_graph, dataset_name, augment_loader)
-
-                # print('Sampled subgraphs: ', len(sampled_subgraphs))
+        
                 seed = seed_list[t]
                 set_seed(seed)
                 train_config['seed'] = seed
@@ -124,7 +102,7 @@ def main(cfg):
 
                 # finish training and testing
                 test_score = detector.train_with_augment()
-                test_score = detector.train()
+                # test_score = detector.train()
 
 
                 auc_list.append(test_score['AUROC'])

@@ -146,9 +146,9 @@ class GADDataset:
             i += 1
         
         # save the local subgraphs for examination
-        os.makedirs('./local_subgraphs', exist_ok=True)
-        torch.save(local_subgraphs, f'./local_subgraphs/{self.name}_{self.trial_id}.pt')
-        print(f'saved {maxN} local {maxNodes}-subgraphs for {self.name}')    
+        # os.makedirs('./local_subgraphs', exist_ok=True)
+        # torch.save(local_subgraphs, f'./local_subgraphs/{self.name}_{self.trial_id}.pt')
+        # print(f'saved {maxN} local {maxNodes}-subgraphs for {self.name}')    
         
         return local_subgraphs
 
@@ -189,7 +189,7 @@ def get_graph_embedding(d):
     
 def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=False):
     edge_index = to_undirected(pyg_graph.edge_index)
-
+    center_node = start_node
     # Extract a 2-hop subgraph around the start_node
     hop2_subset, hop2_edge_index, mapping, _ = k_hop_subgraph(start_node, num_hops=2, edge_index=edge_index, relabel_nodes=True)
     node_mapping = {i: hop2_subset[i].item() for i in range(len(hop2_subset))}
@@ -218,7 +218,7 @@ def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=Fa
         
     # Create a new data object for the subgraph
     d = Data(x=x, edge_index=subg_edge_index, edge_attr = edge_attr, extra_x = extra_x,
-             num_nodes=len(subset), node_mapping=node_mapping, y = y)
+             num_nodes=len(subset), node_mapping=node_mapping, y = y, center_node_idx=center_node)
     return d
     
     
