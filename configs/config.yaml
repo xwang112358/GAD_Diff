@@ -5,7 +5,7 @@ hydra:
     dir: ./
 general:
     name: 'asn'
-    wandb: 'disabled'                # online | offline | disabled
+    wandb: 'online'                # online | offline | disabled
     gpus: 1
     setting: 'train_scratch'
     resume: null
@@ -62,7 +62,7 @@ gad:
         inductive: false
     trials: 10       # 1-10
     semi_supervised: 0
-    models: 'GIN' # -GCN-GAT-GraphSAGE-PNA
+    models: 'GCN-GIN-GAT' # -GCN-GAT-GraphSAGE-PNA
     datasets: '0'
     inductive: false
 augment:

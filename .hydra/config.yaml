@@ -1,6 +1,6 @@
 general:
   name: asn
-  wandb: disabled
+  wandb: online
   gpus: 1
   setting: train_scratch
   resume: null
@@ -64,18 +64,18 @@ gad:
   train_config:
     device: cuda
     epochs: 200
-    patience: 50
+    patience: 30
     metric: AUPRC
     inductive: false
   trials: 10
   semi_supervised: 0
-  models: GIN
+  models: GCN-GIN-GAT
   datasets: '0'
   inductive: false
 augment:
   maxNode: 150
-  start_aug_epoch: 20
-  aug_interval: 20
-  NumSubgraphs: 50
+  start_aug_epoch: 30
+  aug_interval: 40
+  NumSubgraphs: 45
   diffusion_steps: 50
   lggm_variant: adj

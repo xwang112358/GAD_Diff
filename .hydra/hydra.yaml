@@ -111,11 +111,16 @@ hydra:
   overrides:
     hydra:
     - hydra.mode=RUN
-    task: []
+    task:
+    - model.transition=marginal
+    - augment.start_aug_epoch=30
+    - augment.aug_interval=40
+    - augment.NumSubgraphs=45
+    - augment.diffusion_steps=50
   job:
     name: benchmark_new
     chdir: true
-    override_dirname: ''
+    override_dirname: augment.NumSubgraphs=45,augment.aug_interval=40,augment.diffusion_steps=50,augment.start_aug_epoch=30,model.transition=marginal
     id: ???
     num: ???
     config_name: config

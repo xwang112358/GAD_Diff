@@ -106,7 +106,7 @@ class GADDataset:
         self.graph.ndata['test_mask'] = self.graph.ndata['test_masks'][:,trial_id]
         print(self.graph.ndata['train_mask'].sum(), self.graph.ndata['val_mask'].sum(), self.graph.ndata['test_mask'].sum())
 
-    def get_pyg_graph(self):
+    def get_pyg_graph(self, save=True):
         pyg_graph = from_dgl(self.graph)
         pyg_graph.edge_index = pyg_graph.edge_index.long()
         
@@ -125,8 +125,9 @@ class GADDataset:
         if hasattr(pyg_graph, 'feature'):
             pyg_graph.x = pyg_graph.feature
             del pyg_graph.feature
-            
-        torch.save(pyg_graph, f'./pyg_dataset/{self.name}.pt')
+        
+        if save:
+            torch.save(pyg_graph, f'./pyg_dataset/{self.name}.pt')
         print(pyg_graph)
         return pyg_graph
         
@@ -191,9 +192,12 @@ def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=Fa
     edge_index = to_undirected(pyg_graph.edge_index)
     center_node = start_node
     # Extract a 2-hop subgraph around the start_node
+    print('exytracting 2-hop subgraph')
     hop2_subset, hop2_edge_index, mapping, _ = k_hop_subgraph(start_node, num_hops=2, edge_index=edge_index, relabel_nodes=True)
     node_mapping = {i: hop2_subset[i].item() for i in range(len(hop2_subset))}
+    print(len(hop2_subset))
     if len(hop2_subset) > max_nodes:
+        print('proceeding to random walk')
         walks = []
         while len(set(walks)) < max_nodes:
             walk = random_walk(pyg_graph, start_node, walk_length)
@@ -222,8 +226,7 @@ def random_walk_subgraph(pyg_graph, start_node, walk_length, max_nodes, onlyE=Fa
     return d
     
     
-
-def random_walk(pyg_graph, start_node, walk_length=3):
+def random_walk(pyg_graph, start_node, walk_length=2):
     walk = [start_node]
     edge_index = pyg_graph.edge_index
     for _ in range(walk_length):
@@ -424,7 +427,7 @@ def setup_wandb(cfg):
     gad_train_config = cfg.gad.train_config
     config_dict = omegaconf.OmegaConf.to_container(cfg, resolve=True, throw_on_missing=True)
     kwargs = {'name': f'reddit_local_augmentation', 
-              'project': f'GADBench_EXP_v1', 
+              'project': f'GADBench_EXP_v2', 
               'config': config_dict,
               'settings': wandb.Settings(_disable_stats=True), 'reinit': True, 'mode': cfg.general.wandb}
     wandb.init(**kwargs)

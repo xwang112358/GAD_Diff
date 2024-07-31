@@ -1,1 +1,5 @@
-[]
+- model.transition=marginal
+- augment.start_aug_epoch=30
+- augment.aug_interval=40
+- augment.NumSubgraphs=45
+- augment.diffusion_steps=50

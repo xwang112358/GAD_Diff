@@ -75,6 +75,7 @@ class BaseGNNDetector(BaseDetector):
         for e in range(self.train_config['epochs']): #200
             self.model.train()
             logits = self.model(self.train_graph)
+            
             loss = F.cross_entropy(logits[self.train_graph.ndata['train_mask']], train_labels,
                                    weight=torch.tensor([1., self.weight], device=self.labels.device))
             optimizer.zero_grad()
@@ -140,8 +141,12 @@ class BaseGNNDetector(BaseDetector):
 
             self.model.train()
             logits = self.model(temp_graph)  #
+            # update weight with train mask in temp_graph
+            # (1 - self.labels[self.train_mask]).sum().item() / self.labels[self.train_mask].sum().item()
+            weight = (1 - temp_graph.ndata['label'][temp_graph.ndata['train_mask']]).sum().item() / temp_graph.ndata['label'][temp_graph.ndata['train_mask']].sum().item()
+            
             loss = F.cross_entropy(logits[temp_graph.ndata['train_mask']], train_labels,
-                                   weight=torch.tensor([1., self.weight], device=self.labels.device)) # need to update weight later
+                                   weight=torch.tensor([1., weight], device=self.labels.device)) # need to update weight later
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

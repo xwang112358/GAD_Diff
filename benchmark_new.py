@@ -131,7 +131,7 @@ def main(cfg):
             
         model_result = pandas.DataFrame(model_result, index=[0])
         results = pandas.concat([results, model_result])
-        file_id = save_results(results, file_id)
+        # file_id = save_results(results, file_id)
         print(results)
 
 

@@ -187,9 +187,9 @@ class GCN(nn.Module):
         self.h_feats = h_feats
         self.layers = nn.ModuleList()
         self.act = getattr(nn, activation)()
-        self.layers.append(dglnn.GraphConv(in_feats, h_feats, activation=self.act))
+        self.layers.append(dglnn.GraphConv(in_feats, h_feats, activation=self.act, allow_zero_in_degree=True))
         for i in range(num_layers-1):
-            self.layers.append(dglnn.GraphConv(h_feats, h_feats, activation=self.act))
+            self.layers.append(dglnn.GraphConv(h_feats, h_feats, activation=self.act, allow_zero_in_degree=True))
         self.mlp = MLP(h_feats, h_feats, num_classes, mlp_layers, dropout_rate)
         self.dropout = nn.Dropout(dropout_rate) if dropout_rate > 0 else nn.Identity()
 
