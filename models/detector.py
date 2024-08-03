@@ -117,16 +117,18 @@ class BaseGNNDetector(BaseDetector):
         temp_graph = self.source_graph
         for e in range(self.train_config['epochs']):
             # print('Epoch', e)
-            if e >= self.cfg.augment.start_aug_epoch and e % self.cfg.augment.aug_interval == 0:
+            if e >= self.cfg.augment.start_aug_epoch and (e-self.cfg.augment.start_aug_epoch) % self.cfg.augment.aug_interval == 0:
                 temp_graph = self.source_graph
                 sampled_subgraphs = self.data.get_local_subgraphs(self.cfg.augment.maxNode, self.cfg.augment.NumSubgraphs)
                 augment_subgraphs = augmentation(self.cfg, self.source_pyg_graph, self.data.name, sampled_subgraphs)
                 for subgraph in augment_subgraphs:
                     new_x = subgraph.x.to(self.device)
                     new_edges = subgraph.edge_index.to(self.device)
+                
                     new_labels = subgraph.label.to(self.device)
                     num_existing_nodes = temp_graph.num_nodes()
                     new_edges = new_edges + num_existing_nodes
+                    new_edges = new_edges.to(torch.int32)
                     new_train_mask = torch.cat([torch.tensor([1], dtype=torch.uint8), torch.tensor([0]*(subgraph.x.size(0)-1), dtype=torch.uint8)]).to(self.device)
                     new_val_mask = torch.tensor([0]*subgraph.x.size(0), dtype=torch.uint8).to(self.device)
                     new_test_mask = torch.tensor([0]*subgraph.x.size(0), dtype=torch.uint8).to(self.device)

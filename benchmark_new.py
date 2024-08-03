@@ -66,7 +66,7 @@ def main(cfg):
             train_config = {
                 'device': 'cuda',
                 'epochs': 200,
-                'patience': 100,
+                'patience': 50,
                 'metric': 'AUPRC',
                 'inductive': args.inductive
             }
@@ -101,8 +101,10 @@ def main(cfg):
                 print(detector.model)
 
                 # finish training and testing
-                test_score = detector.train_with_augment()
-                # test_score = detector.train()
+                if cfg.augment.active:
+                    test_score = detector.train_with_augment()
+                else:
+                    test_score = detector.train()
 
 
                 auc_list.append(test_score['AUROC'])
@@ -131,7 +133,7 @@ def main(cfg):
             
         model_result = pandas.DataFrame(model_result, index=[0])
         results = pandas.concat([results, model_result])
-        # file_id = save_results(results, file_id)
+        file_id = save_results(results, file_id)
         print(results)
 
 

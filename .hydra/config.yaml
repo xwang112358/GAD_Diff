@@ -1,6 +1,6 @@
 general:
   name: asn
-  wandb: online
+  wandb: disabled
   gpus: 1
   setting: train_scratch
   resume: null
@@ -69,13 +69,14 @@ gad:
     inductive: false
   trials: 10
   semi_supervised: 0
-  models: GCN-GIN-GAT
-  datasets: '0'
+  models: GCN-GIN-GAT-PNA
+  datasets: '7'
   inductive: false
 augment:
-  maxNode: 150
+  active: true
+  maxNode: 35
   start_aug_epoch: 30
-  aug_interval: 40
-  NumSubgraphs: 45
-  diffusion_steps: 50
+  aug_interval: 25
+  NumSubgraphs: 100
+  diffusion_steps: 10
   lggm_variant: adj

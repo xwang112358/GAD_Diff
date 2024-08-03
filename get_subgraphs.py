@@ -13,7 +13,7 @@ from tqdm import tqdm
 from utils import GADDataset
 import os
 import random
-from utils import random_walk_subgraph
+from utils import bfs_subgraph_sampling
 
 # from dgl.data.utils import load_graphs
 
@@ -37,13 +37,12 @@ from utils import random_walk_subgraph
 
 
 if __name__ == '__main__':
-    parser = argparse.ArgumentParser(description='Create k-hop subgraphs from a PyG dataset.')
+    parser = argparse.ArgumentParser(description='Create subgraphs from a PyG dataset.')
     parser.add_argument('--name', type=str, default='questions  ', help='Name of the dataset')
-    parser.add_argument('--maxN', type=int, default=50, help='Largest number of nodes allowed in the subgraph')
+    parser.add_argument('--maxN', type=int, default=150, help='Largest number of nodes allowed in the subgraph')
     parser.add_argument('--seed', type=int, default=0, help='Random seed')
     parser.add_argument('--num_subgraphs', type=int, default=1000, help='Number of subgraphs to create')
-    parser.add_argument('--walk_length', type=int, default=2, help='Length of the random walk')
-
+    parser.add_argument('--onehop', action='store_true', help='Use one-hop subgraph sampling')    
     args = parser.parse_args()
 
     torch.manual_seed(args.seed)
@@ -59,6 +58,7 @@ if __name__ == '__main__':
 
     except FileNotFoundError:
         data = GADDataset(args.name)
+        pyg_data = torch.load(f'./pyg_dataset/{args.name}.pt')
 
     # Ensure edges are undirected
 
@@ -80,16 +80,45 @@ if __name__ == '__main__':
     train_valid_anomaly_indices = train_anomaly_indices + valid_anomaly_indices
 
     print(len(train_valid_anomaly_indices))
+    
+    num_nodes_1hop = []
+    num_nodes_2hop = []
+    anomaly_subgraphs = []
+    
+    for i in tqdm(range(len(train_valid_anomaly_indices))):
+        subset, _, _, _= k_hop_subgraph(train_valid_anomaly_indices[i], 1, pyg_data.edge_index)
+        num_nodes_1hop.append(len(subset))
+        subset, _, _, _= k_hop_subgraph(train_valid_anomaly_indices[i], 2, pyg_data.edge_index)
+        num_nodes_2hop.append(len(subset))
+        # extract 
+    # print mean and std of the subgraph sizes
+    mean = np.mean(num_nodes_1hop)
+    std = np.std(num_nodes_1hop)
+    print(f"One hop Mean # nodes: {mean}, std: {std}")
+    mean = np.mean(num_nodes_2hop)
+    std = np.std(num_nodes_2hop)
+    print(f"Two hop Mean # nodes: {mean}, std: {std}")
+    
+    if args.onehop:
+        for node_idx in tqdm(train_valid_anomaly_indices):
+            subgraph_data = bfs_subgraph_sampling(pyg_data, node_idx, 35, onlyE=True)
+            anomaly_subgraphs.append(subgraph_data)
+        
+        os.makedirs(f'./pyg_dataset/{args.name}_anomaly', exist_ok=True)
+        
+        torch.save(anomaly_subgraphs, f'./pyg_dataset/{args.name}_anomaly/{args.name}_1hop.pt')
+    
 
     anomaly_subgraphs = []
     
-    for i in range(args.num_subgraphs):
-        print(f"Creating subgraph {i}")
+    for i in tqdm(range(args.num_subgraphs)):
         node_idx = random.choice(train_valid_anomaly_indices)
-        subgraph = random_walk_subgraph(pyg_data, node_idx, args.walk_length, args.maxN, onlyE=True)
-        anomaly_subgraphs.append(subgraph)
+        subgraph_data = bfs_subgraph_sampling(pyg_data, node_idx, args.maxN, onlyE=True)
+        anomaly_subgraphs.append(subgraph_data)
     
-    # torch.save(anomaly_subgraphs, f'./pyg_dataset/{args.name}/{args.name}_anomaly.pt')
+    os.makedirs(f'./pyg_dataset/{args.name}_anomaly', exist_ok=True)
+    
+    torch.save(anomaly_subgraphs, f'./pyg_dataset/{args.name}_anomaly/{args.name}_anomaly.pt')
     
 
 

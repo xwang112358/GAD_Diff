@@ -1,6 +1,5 @@
 import torch
 from torch_geometric.utils import from_dgl, to_networkx, k_hop_subgraph, subgraph
-print(subgraph)
 import random
 from torch_geometric.data import Data
 from torch_geometric.utils import subgraph, to_undirected
@@ -14,7 +13,7 @@ from collections import deque
 
 from utils import GADDataset
 
-def bfs_subgraph_sampling(pyg_graph, start_node, max_nodes, onlyE=False):
+def bfs_subgraph_sampling(pyg_graph, start_node, max_nodes, onlyE=False, seed=0):
     edge_index = to_undirected(pyg_graph.edge_index)
     center_node = start_node
 
@@ -24,6 +23,9 @@ def bfs_subgraph_sampling(pyg_graph, start_node, max_nodes, onlyE=False):
 
     if len(hop2_subset) > max_nodes:
         # BFS to downsample the subgraph while maintaining connectivity
+        if seed is not None:
+            np.random.seed(seed)
+        
         visited = set()
         queue = deque([start_node])
         subset = []
@@ -34,6 +36,9 @@ def bfs_subgraph_sampling(pyg_graph, start_node, max_nodes, onlyE=False):
                 visited.add(node)
                 subset.append(node)
                 neighbors = edge_index[1][edge_index[0] == node].cpu().numpy()
+                
+                np.random.shuffle(neighbors)
+                
                 for neighbor in neighbors:
                     if neighbor not in visited:
                         queue.append(neighbor)
@@ -59,7 +64,6 @@ def bfs_subgraph_sampling(pyg_graph, start_node, max_nodes, onlyE=False):
     return d
 
 
-
 data = GADDataset('tolokers')
 pyg_graph = data.get_pyg_graph(save=False)
 
@@ -75,8 +79,17 @@ anomaly_indices = anomaly_indices = torch.nonzero(pyg_graph.y, as_tuple=False).s
 
 
 anomaly_subgraphs = []
-for i in tqdm(range(2000)):
-    node_idx = random.choice(anomaly_indices)
-    subgraph = bfs_subgraph_sampling(pyg_graph, node_idx, 50, onlyE=True)
-    anomaly_subgraphs.append(subgraph)
+# for i in tqdm(range(2000)):
+#     node_idx = random.choice(anomaly_indices)
+#     subgraph = bfs_subgraph_sampling(pyg_graph, node_idx,150, onlyE=True)
+#     anomaly_subgraphs.append(subgraph)
+np.random.seed(0)
+print(np.random.choice(anomaly_indices, 1))
+print(np.random.choice(anomaly_indices, 1))
+print(np.random.choice(anomaly_indices, 1))
+node_idx = 5
+subgraph = bfs_subgraph_sampling(pyg_graph, node_idx,150)
+print(subgraph)
 
+
+# print(anomaly_subgraphs)

@@ -147,7 +147,11 @@ class EigenFeatures:
             return n_connected_comp.type_as(A), batch_eigenvalues.type_as(A)
 
         elif self.mode == 'all':
-            eigvals, eigvectors = torch.linalg.eigh(L)
+            # print(L.shape)
+            epsilon = 1e-5
+            L_reg = L + epsilon * torch.eye(L.shape[-1], device=L.device, dtype=L.dtype)
+
+            eigvals, eigvectors = torch.linalg.eigh(L_reg)
             eigvals = eigvals.type_as(A) / torch.sum(mask, dim=1, keepdim=True)
             eigvectors = eigvectors * mask.unsqueeze(2) * mask.unsqueeze(1)
             # Retrieve eigenvalues features

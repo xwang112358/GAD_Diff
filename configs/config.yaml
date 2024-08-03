@@ -5,7 +5,7 @@ hydra:
     dir: ./
 general:
     name: 'asn'
-    wandb: 'online'                # online | offline | disabled
+    wandb: 'disabled'                # online | offline | disabled
     gpus: 1
     setting: 'train_scratch'
     resume: null
@@ -62,13 +62,14 @@ gad:
         inductive: false
     trials: 10       # 1-10
     semi_supervised: 0
-    models: 'GCN-GIN-GAT' # -GCN-GAT-GraphSAGE-PNA
-    datasets: '0'
+    models: 'GCN-GIN-GAT-PNA' # -GCN-GAT-GraphSAGE-PNA
+    datasets: '7' # questions
     inductive: false
 augment:
+    active: True
     maxNode: 150
-    start_aug_epoch: 20
+    start_aug_epoch: 50
     aug_interval: 20
     NumSubgraphs: 50
-    diffusion_steps: 50
+    diffusion_steps: 10
     lggm_variant: 'adj'  # adj, onehot, contX
